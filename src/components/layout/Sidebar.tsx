@@ -23,12 +23,12 @@ export default function Sidebar({ className }: SidebarProps) {
   const router = useRouter();
 
   const handleLogout = async () => {
+    // Clear mock session cookie
+    document.cookie = 'mock-auth-session=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+
     if (isSupabaseConfigured()) {
       const supabase = createClient();
       await supabase.auth.signOut();
-    } else {
-      // Clear mock session cookie
-      document.cookie = 'mock-auth-session=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
     }
     router.push('/login');
     router.refresh();

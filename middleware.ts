@@ -8,6 +8,16 @@ export async function middleware(request: NextRequest) {
   // Define public paths that do not require authentication
   const isPublicPath = path === '/login';
 
+  // Check for mock session first
+  const hasMockSession = request.cookies.has('mock-auth-session');
+
+  if (hasMockSession) {
+    if (isPublicPath) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+    return NextResponse.next();
+  }
+
   // If supabase is configured, use its server client session check
   if (isSupabaseConfigured()) {
     try {
@@ -57,15 +67,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Fallback Mock Authentication using Cookie
-  const hasMockSession = request.cookies.has('mock-auth-session');
-
-  if (!hasMockSession && !isPublicPath) {
+  // Fallback Mock Authentication using Cookie (if no Supabase, and no mock session)
+  if (!isPublicPath) {
     return NextResponse.redirect(new URL('/login', request.url));
-  }
-
-  if (hasMockSession && isPublicPath) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   return NextResponse.next();

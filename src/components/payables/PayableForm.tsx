@@ -306,7 +306,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
       </div>
 
       {/* Row: Vendor Name & Due Date (Conditioned for non-Rent) */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className={showAddVendor || showAddEmployee ? "grid grid-cols-1 gap-4" : "grid grid-cols-2 gap-4"}>
         {/* Vendor / Employee */}
         <div className="space-y-1.5 relative">
           <div className="flex justify-between items-center">

@@ -396,12 +396,11 @@ function ReportsContent() {
 
       // Category Section Header Row
       xml += `   <Row ss:Height="22">
-    <Cell ss:MergeAcross="8" ss:StyleID="TotalRow"><Data ss:Type="String">${escapeXML(cat.name.toUpperCase())} (${catPayables.length} ${catPayables.length === 1 ? 'record' : 'records'})</Data></Cell>
+    <Cell ss:MergeAcross="7" ss:StyleID="TotalRow"><Data ss:Type="String">${escapeXML(cat.name.toUpperCase())} (${catPayables.length} ${catPayables.length === 1 ? 'record' : 'records'})</Data></Cell>
    </Row>
    <Row ss:Height="20">
     <Cell ss:StyleID="Header"><Data ss:Type="String">Due Date</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Title</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Payee / Vendor</Data></Cell>
+    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Vendor &amp; Details</Data></Cell>
     <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Ref No.</Data></Cell>
     <Cell ss:StyleID="Header"><Data ss:Type="String">Status</Data></Cell>
     <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Total Amount (OMR)</Data></Cell>
@@ -441,10 +440,11 @@ function ReportsContent() {
           formattedDate = format(parseISO(p.due_date), 'dd MMM yyyy');
         } catch (err) {}
 
-        xml += `   <Row ss:Height="20">
+        const detailsText = `${p.vendor_name || '—'}\n${titleText}`;
+
+        xml += `   <Row ss:Height="30">
     <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${escapeXML(formattedDate)}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(titleText)}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(p.vendor_name || '—')}</Data></Cell>
+    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(detailsText)}</Data></Cell>
     <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(p.reference_no || '—')}</Data></Cell>
     <Cell ss:StyleID="${statusStyle}"><Data ss:Type="String">${escapeXML(p.status)}</Data></Cell>
     <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${p.amount}</Data></Cell>
@@ -458,7 +458,6 @@ function ReportsContent() {
       // Section Subtotal Row
       xml += `   <Row ss:Height="22">
     <Cell ss:StyleID="TotalRow"><Data ss:Type="String">Subtotal (${cat.name})</Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
     <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
     <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
     <Cell ss:StyleID="TotalRowCenter"><Data ss:Type="String">Paid: ${catPayables.filter(p => p.status === 'paid' || p.status === 'partial').length} | Due: ${catPayables.filter(p => p.status === 'pending' || p.status === 'overdue' || p.status === 'partial').length}</Data></Cell>
@@ -878,8 +877,7 @@ function ReportsContent() {
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider">
                           <th className="py-2 px-3">Due Date</th>
-                          <th className="py-2 px-3">Title</th>
-                          <th className="py-2 px-3">Payee/Vendor</th>
+                          <th className="py-2 px-3">Vendor &amp; Details</th>
                           <th className="py-2 px-3">Ref No.</th>
                           <th className="py-2 px-3 text-right">Amount (OMR)</th>
                           <th className="py-2 px-3 text-center">Status</th>
@@ -891,15 +889,18 @@ function ReportsContent() {
                             <td className="py-2 px-3 font-numeric text-slate-500">
                               {format(parseISO(p.due_date), 'dd MMM yyyy')}
                             </td>
-                            <td className="py-2 px-3 truncate max-w-[200px]">
-                              <span className="font-semibold text-slate-900 block" title={p.title}>{p.title}</span>
+                            <td className="py-2 px-3 whitespace-pre-wrap break-words min-w-[200px]">
+                              <span className="font-bold text-slate-950 block text-[13px]">{p.vendor_name || '—'}</span>
+                              <span className="font-medium text-slate-700 block mt-1" title={p.title}>{p.title}</span>
+                              {p.notes && (
+                                <span className="text-[11px] text-slate-500 block mt-1 leading-relaxed whitespace-pre-wrap break-words">{p.notes}</span>
+                              )}
                               {p.pdc && (
-                                <span className="text-[10px] text-orange-600 font-semibold block mt-0.5">
+                                <span className="text-[10px] text-orange-600 font-semibold block mt-1">
                                   Cheque #{p.pdc.cheque_no} • {p.pdc.bank_name || '—'} (Status: {p.pdc.status})
                                 </span>
                               )}
                             </td>
-                            <td className="py-2 px-3 text-slate-600 truncate max-w-[150px]">{p.vendor_name || '—'}</td>
                             <td className="py-2 px-3 font-numeric text-slate-500">{p.reference_no || '—'}</td>
                             <td className="py-2 px-3 text-right font-bold text-slate-800 font-numeric">{formatOMR(p.amount)}</td>
                             <td className="py-2 px-3 text-center">
@@ -919,7 +920,7 @@ function ReportsContent() {
                       </tbody>
                       <tfoot>
                         <tr className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
-                          <td colSpan={4} className="py-2.5 px-3 text-slate-500 text-[10px] uppercase tracking-wider">
+                          <td colSpan={3} className="py-2.5 px-3 text-slate-500 text-[10px] uppercase tracking-wider">
                             Section Subtotal ({cat.name})
                           </td>
                           <td className="py-2.5 px-3 text-right font-numeric text-slate-950 font-bold">
