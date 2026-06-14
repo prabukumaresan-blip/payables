@@ -52,6 +52,7 @@ export interface Payable {
   updated_at: string;
   pdc?: PDC | null;
   loan?: LoanSchedule | null;
+  category?: Category | null;
   rent_start_month?: string | null;
   rent_end_month?: string | null;
   rent_repeat_sequence?: 'monthly' | 'weekly' | 'quarterly' | null;

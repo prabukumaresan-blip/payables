@@ -4,7 +4,7 @@ import { format, parse, addMonths, compareAsc, addWeeks, endOfMonth } from 'date
 
 // Helper to determine if we should use mock database
 const useMock = () => {
-  return !isSupabaseConfigured() || typeof window !== 'undefined';
+  return !isSupabaseConfigured();
 };
 
 export async function getCategories(): Promise<Category[]> {
@@ -282,7 +282,42 @@ export async function createPayable(
   }
 
   if (!useMock()) {
-    // Mock DB write
+    const supabase = createBrowserSupabase();
+    
+    // Extract base payables mapping (omit relations: pdc, loan, category)
+    const dbPayables = payablesToCreate.map(({ pdc, loan, category, ...rest }) => rest);
+    
+    const { error: payablesError } = await supabase.from('payables').insert(dbPayables);
+    if (payablesError) {
+      console.error('Error inserting payables into Supabase:', payablesError);
+      throw payablesError;
+    }
+
+    // Insert associated PDCs if they exist
+    const pdcsToCreate = payablesToCreate
+      .filter((p) => p.pdc)
+      .map((p) => p.pdc!);
+    
+    if (pdcsToCreate.length > 0) {
+      const { error: pdcsError } = await supabase.from('pdcs').insert(pdcsToCreate);
+      if (pdcsError) {
+        console.error('Error inserting PDCs into Supabase:', pdcsError);
+        throw pdcsError;
+      }
+    }
+
+    // Insert associated Loan schedules if they exist
+    const loansToCreate = payablesToCreate
+      .filter((p) => p.loan)
+      .map((p) => p.loan!);
+    
+    if (loansToCreate.length > 0) {
+      const { error: loansError } = await supabase.from('loan_schedule').insert(loansToCreate);
+      if (loansError) {
+        console.error('Error inserting loan schedule into Supabase:', loansError);
+        throw loansError;
+      }
+    }
   }
 
   const db = getMockDb();
@@ -342,6 +377,64 @@ export async function updatePayable(
     updatedPayable.loan = null;
   }
 
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    
+    // Extract base payable fields (excluding relations: pdc, loan, category)
+    const { pdc: pdcUpdate, loan: loanUpdate, category, ...payableFields } = updatedFields;
+    
+    if (Object.keys(payableFields).length > 0) {
+      const { error: payableError } = await supabase
+        .from('payables')
+        .update({ ...payableFields, updated_at: now })
+        .eq('id', id);
+      if (payableError) {
+        console.error('Error updating payable in Supabase:', payableError);
+        throw payableError;
+      }
+    }
+
+    if (pdcUpdate) {
+      const finalPdc = updatedPayable.pdc!;
+      const { error: pdcError } = await supabase
+        .from('pdcs')
+        .upsert(finalPdc);
+      if (pdcError) {
+        console.error('Error updating/upserting PDC in Supabase:', pdcError);
+        throw pdcError;
+      }
+    } else if (pdcUpdate === null) {
+      const { error: pdcDeleteError } = await supabase
+        .from('pdcs')
+        .delete()
+        .eq('payable_id', id);
+      if (pdcDeleteError) {
+        console.error('Error deleting PDC in Supabase:', pdcDeleteError);
+        throw pdcDeleteError;
+      }
+    }
+
+    if (loanUpdate) {
+      const finalLoan = updatedPayable.loan!;
+      const { error: loanError } = await supabase
+        .from('loan_schedule')
+        .upsert(finalLoan);
+      if (loanError) {
+        console.error('Error updating/upserting loan schedule in Supabase:', loanError);
+        throw loanError;
+      }
+    } else if (loanUpdate === null) {
+      const { error: loanDeleteError } = await supabase
+        .from('loan_schedule')
+        .delete()
+        .eq('payable_id', id);
+      if (loanDeleteError) {
+        console.error('Error deleting loan schedule in Supabase:', loanDeleteError);
+        throw loanDeleteError;
+      }
+    }
+  }
+
   db.payables[index] = updatedPayable;
   saveMockPayables(db.payables);
 
@@ -349,6 +442,14 @@ export async function updatePayable(
 }
 
 export async function deletePayable(id: string): Promise<boolean> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.from('payables').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting payable from Supabase:', error);
+      throw error;
+    }
+  }
   const db = getMockDb();
   const countBefore = db.payables.length;
   const filtered = db.payables.filter((p) => p.id !== id);
