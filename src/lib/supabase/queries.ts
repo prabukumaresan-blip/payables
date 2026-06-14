@@ -297,7 +297,12 @@ export async function createPayable(
     
     const { error: payablesError } = await supabase.from('payables').insert(dbPayables);
     if (payablesError) {
-      console.error('Error inserting payables into Supabase:', payablesError);
+      console.error('Error inserting payables into Supabase:', {
+        message: payablesError.message,
+        code: payablesError.code,
+        details: payablesError.details,
+        hint: payablesError.hint
+      });
       throw payablesError;
     }
 
