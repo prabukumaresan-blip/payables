@@ -11,7 +11,15 @@ export async function getCategories(): Promise<Category[]> {
   if (!useMock()) {
     const supabase = createBrowserSupabase();
     const { data, error } = await supabase.from('categories').select('*');
-    if (!error && data) return data;
+    if (!error && data) {
+      if (data.length === 0) {
+        // Seed categories to Supabase if the table is empty
+        const { error: seedError } = await supabase.from('categories').insert(SEEDED_CATEGORIES);
+        if (!seedError) return SEEDED_CATEGORIES;
+      } else {
+        return data;
+      }
+    }
   }
   return getMockDb().categories;
 }
