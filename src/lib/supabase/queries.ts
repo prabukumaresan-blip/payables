@@ -534,6 +534,16 @@ export async function updatePdcStatus(
 }
 
 export async function getReports(startMonth: string, endMonth: string): Promise<Payable[]> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { data, error } = await supabase
+      .from('payables')
+      .select('*, category:categories(*), pdc:pdcs(*), loan:loan_schedule(*)')
+      .gte('month_year', startMonth)
+      .lte('month_year', endMonth);
+    if (!error && data) return data;
+  }
+
   const db = getMockDb();
   
   // Filter payables that fall within month range inclusive
