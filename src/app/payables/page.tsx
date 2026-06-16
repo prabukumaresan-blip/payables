@@ -61,6 +61,10 @@ function PayablesContent() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [editingPayable, setEditingPayable] = useState<Payable | null>(null);
 
+  // Deletion State for Multi-Occurrence
+  const [deleteTarget, setDeleteTarget] = useState<Payable | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
   // Load Data
   const loadData = async () => {
     setLoading(true);
@@ -230,10 +234,36 @@ function PayablesContent() {
     document.body.removeChild(link);
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this payable record?')) {
-      await deletePayable(id);
-      loadData();
+  const isMultiOccurrence = (payable: Payable) => {
+    return (
+      (payable.recurrence && payable.recurrence !== 'once') ||
+      (payable.pdc_no_of_cheques && payable.pdc_no_of_cheques > 1) ||
+      (payable.rent_start_month && payable.rent_start_month !== '')
+    );
+  };
+
+  const handleDelete = (payable: Payable) => {
+    if (isMultiOccurrence(payable)) {
+      setDeleteTarget(payable);
+      setIsDeleteModalOpen(true);
+    } else {
+      if (confirm(`Are you sure you want to delete "${payable.title}"?`)) {
+        executeDelete(payable.id, false);
+      }
+    }
+  };
+
+  const executeDelete = async (id: string, deleteAll: boolean) => {
+    setLoading(true);
+    try {
+      await deletePayable(id, deleteAll);
+      await loadData();
+    } catch (e) {
+      console.error('Error deleting payable:', e);
+    } finally {
+      setIsDeleteModalOpen(false);
+      setDeleteTarget(null);
+      setLoading(false);
     }
   };
 
@@ -440,7 +470,7 @@ function PayablesContent() {
                               <Edit3 className="h-4 w-4" />
                             </button>
                             <button
-                              onClick={() => handleDelete(payable.id)}
+                              onClick={() => handleDelete(payable)}
                               className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600"
                               title="Delete record"
                             >
@@ -517,6 +547,55 @@ function PayablesContent() {
                   }}
                   onCancel={() => setIsSheetOpen(false)}
                 />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Multi-occurrence Deletion Modal */}
+        {isDeleteModalOpen && deleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop overlay */}
+            <div 
+              onClick={() => setIsDeleteModalOpen(false)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" 
+            />
+
+            {/* Modal Dialog Card */}
+            <div className="relative w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-200 p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 border border-rose-100">
+                  <AlertTriangle className="h-5 w-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 font-sans">
+                    Delete Recurring Transaction
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    &quot;{deleteTarget.title}&quot; is part of a recurring series or has multiple occurrences. How would you like to delete it?
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2.5 pt-2">
+                <button
+                  onClick={() => executeDelete(deleteTarget.id, false)}
+                  className="w-full flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
+                >
+                  Delete Only This Occurrence
+                </button>
+                <button
+                  onClick={() => executeDelete(deleteTarget.id, true)}
+                  className="w-full flex items-center justify-center rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-500 shadow-md shadow-rose-500/10 transition-colors"
+                >
+                  Delete All Occurrences in Series
+                </button>
+                <button
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="w-full flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>

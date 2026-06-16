@@ -454,18 +454,38 @@ export async function updatePayable(
   return updatedPayable;
 }
 
-export async function deletePayable(id: string): Promise<boolean> {
+export async function deletePayable(id: string, deleteAllOccurrences: boolean = false): Promise<boolean> {
+  const db = getMockDb();
+  const target = db.payables.find((p) => p.id === id);
+  if (!target) return false;
+
   if (!useMock()) {
     const supabase = createBrowserSupabase();
-    const { error } = await supabase.from('payables').delete().eq('id', id);
-    if (error) {
-      console.error('Error deleting payable from Supabase:', error);
-      throw error;
+    if (deleteAllOccurrences) {
+      const { error } = await supabase
+        .from('payables')
+        .delete()
+        .eq('created_at', target.created_at);
+      if (error) {
+        console.error('Error deleting multi-occurrence payables from Supabase:', error);
+        throw error;
+      }
+    } else {
+      const { error } = await supabase.from('payables').delete().eq('id', id);
+      if (error) {
+        console.error('Error deleting payable from Supabase:', error);
+        throw error;
+      }
     }
   }
-  const db = getMockDb();
+
   const countBefore = db.payables.length;
-  const filtered = db.payables.filter((p) => p.id !== id);
+  let filtered;
+  if (deleteAllOccurrences) {
+    filtered = db.payables.filter((p) => p.created_at !== target.created_at);
+  } else {
+    filtered = db.payables.filter((p) => p.id !== id);
+  }
   saveMockPayables(filtered);
   return filtered.length < countBefore;
 }

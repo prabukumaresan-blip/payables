@@ -675,7 +675,10 @@ function ReportsContent() {
         <div 
           ref={reportRef} 
           id="report-document" 
-          className="p-8 rounded-2xl border border-slate-200 bg-white space-y-8 shadow-sm relative overflow-hidden text-slate-850"
+          className={cn(
+            "p-8 rounded-2xl border border-slate-200 bg-white space-y-8 shadow-sm relative overflow-hidden text-slate-850",
+            generatingPDF && "pdf-render-mode"
+          )}
         >
           {/* Section 1: Document Header & KPI Grid */}
           <div data-pdf-section className="space-y-8 border-b border-slate-100 pb-6">
