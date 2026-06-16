@@ -5,8 +5,8 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as zod from 'zod';
 import { Payable, Category, PDC, LoanSchedule, Vendor, Employee } from '@/lib/supabase/mockDb';
-import { createPayable, updatePayable, getVendors, createVendor, getEmployees, createEmployee } from '@/lib/supabase/queries';
-import { AlertCircle, HelpCircle, Plus, Check } from 'lucide-react';
+import { createPayable, updatePayable, getVendors, createVendor, getEmployees, createEmployee, deleteVendor } from '@/lib/supabase/queries';
+import { AlertCircle, HelpCircle, Plus, Check, Trash2, Search } from 'lucide-react';
 
 const formSchema = zod.object({
   title: zod.string().min(1, 'Title is required'),
@@ -104,6 +104,23 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
 
   // Watch selected vendor
   const selectedVendorName = useWatch({ control, name: 'vendor_name' });
+
+  // Searchable combobox states
+  const [vendorSearch, setVendorSearch] = React.useState('');
+  const [isVendorDropdownOpen, setIsVendorDropdownOpen] = React.useState(false);
+  const vendorDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (vendorDropdownRef.current && !vendorDropdownRef.current.contains(event.target as Node)) {
+        setIsVendorDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Employees state
   const [employees, setEmployees] = React.useState<Employee[]>([]);
@@ -482,17 +499,83 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
               </button>
             </div>
           ) : (
-            <select
-              {...register('vendor_name')}
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-850 outline-none focus:border-indigo-500"
-            >
-              <option value="">Select Vendor</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.name}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative" ref={vendorDropdownRef}>
+              <div 
+                onClick={() => setIsVendorDropdownOpen(!isVendorDropdownOpen)}
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-850 outline-none focus:border-indigo-500 cursor-pointer flex justify-between items-center"
+              >
+                <span className={selectedVendorName ? "text-slate-850 font-medium" : "text-slate-400"}>
+                  {selectedVendorName || "Select Vendor"}
+                </span>
+                <span className="text-slate-400 text-xs">▼</span>
+              </div>
+              
+              {isVendorDropdownOpen && (
+                <div className="absolute left-0 right-0 z-50 mt-1 rounded-xl border border-slate-200 bg-white p-2 shadow-xl space-y-2 max-h-[260px] flex flex-col">
+                  {/* Search input inside dropdown */}
+                  <div className="relative shrink-0">
+                    <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search vendor..."
+                      value={vendorSearch}
+                      onChange={(e) => setVendorSearch(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  
+                  {/* Vendor list */}
+                  <div className="flex-1 overflow-y-auto divide-y divide-slate-50 min-h-[50px]">
+                    {vendors.filter(v => v.name.toLowerCase().includes(vendorSearch.toLowerCase())).length === 0 ? (
+                      <div className="py-4 text-center text-xs text-slate-400">No vendors found</div>
+                    ) : (
+                      vendors
+                        .filter(v => v.name.toLowerCase().includes(vendorSearch.toLowerCase()))
+                        .map((v) => (
+                          <div 
+                            key={v.id}
+                            onClick={() => {
+                              setValue('vendor_name', v.name);
+                              setIsVendorDropdownOpen(false);
+                              setVendorSearch('');
+                            }}
+                            className="flex items-center justify-between py-2 px-2.5 text-xs text-slate-700 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors"
+                          >
+                            <span className="font-semibold">{v.name}</span>
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
+                                  try {
+                                    await deleteVendor(v.id);
+                                    // Refresh vendors list
+                                    const list = await getVendors();
+                                    setVendors(list);
+                                    // If the deleted vendor was selected, clear it
+                                    if (selectedVendorName === v.name) {
+                                      setValue('vendor_name', '');
+                                    }
+                                  } catch (err) {
+                                    console.error('Error deleting vendor:', err);
+                                  }
+                                }
+                              }}
+                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 transition-colors"
+                              title="Delete Vendor"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* Keep a hidden input so react-hook-form can register it */}
+              <input type="hidden" {...register('vendor_name')} />
+            </div>
           )}
         </div>
 
@@ -597,25 +680,23 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
               <option value="annual">Annual</option>
             </select>
 
-            {/* Number of EMIs (Months) for Loan */}
-            {selectedCategory?.name === 'Loan' && selectedRecurrence && selectedRecurrence !== 'once' && (
+            {/* Repeat count if recurrence is enabled */}
+            {selectedRecurrence && selectedRecurrence !== 'once' && (
               <div className="space-y-1.5 mt-3">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Number of EMIs (Months)
+                  Number of Occurrences (Repeat Count)
                 </label>
                 <input
                   type="number"
                   min={1}
                   {...register('pdc_no_of_cheques')}
-                  placeholder="e.g. 12"
+                  placeholder={selectedRecurrence === 'monthly' ? "e.g. 12 months" : "e.g. 4"}
                   className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-850 outline-none focus:border-indigo-500 font-numeric"
                 />
               </div>
             )}
           </div>
-        )}
-
-        {/* Bank Account */}
+        )}        {/* Bank Account */}
         <div className="space-y-1.5">
           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
             Bank Account

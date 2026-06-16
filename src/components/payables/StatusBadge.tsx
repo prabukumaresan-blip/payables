@@ -22,6 +22,7 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
   const [partialAmount, setPartialAmount] = useState(
     payable.paid_amount ? String(payable.paid_amount) : ''
   );
+  const [billAmount, setBillAmount] = useState(String(payable.amount));
   
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -41,15 +42,18 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
 
   const handleStatusChange = async (status: Payable['status']) => {
     setSelectedStatus(status);
-    if (status !== 'paid' && status !== 'partial') {
-      await saveStatus(status, null, null);
+    if (payable.category_id !== 'cat-8') {
+      if (status !== 'paid' && status !== 'partial') {
+        await saveStatus(status, null, null);
+      }
     }
   };
 
   const saveStatus = async (status: Payable['status'], payDate: string | null, paidAmount: number | null) => {
     setLoading(true);
     try {
-      const updated = await updatePayableStatus(payable.id, status, payDate, paidAmount);
+      const newAmt = payable.category_id === 'cat-8' ? parseFloat(billAmount) || 0 : null;
+      const updated = await updatePayableStatus(payable.id, status, payDate, paidAmount, newAmt);
       onUpdate(updated);
       setIsOpen(false);
     } catch (e) {
@@ -105,6 +109,27 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
               </button>
             </div>
 
+            {/* Bill Amount Input for Utility Payments */}
+            {payable.category_id === 'cat-8' && (
+              <div className="mb-3.5 pb-3 border-b border-slate-100 space-y-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Bill Amount (OMR)
+                </label>
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0.00"
+                  value={billAmount}
+                  onChange={(e) => {
+                    setBillAmount(e.target.value);
+                    setPartialAmount(e.target.value);
+                  }}
+                  placeholder="Enter bill amount"
+                  className="w-full rounded border border-slate-200 bg-slate-50 py-1 px-2.5 text-xs text-slate-850 outline-none focus:border-indigo-500 font-numeric"
+                />
+              </div>
+            )}
+
             <div className="space-y-1">
               {(['pending', 'partial', 'paid', 'overdue', 'cancelled'] as const).map((status) => (
                 <button
@@ -130,6 +155,19 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
               ))}
             </div>
 
+            {/* Confirm button for utility bills on non-paid/partial statuses */}
+            {payable.category_id === 'cat-8' && (selectedStatus === 'pending' || selectedStatus === 'overdue' || selectedStatus === 'cancelled') && (
+              <div className="mt-3.5 pt-3.5 border-t border-slate-100">
+                <button
+                  disabled={loading || !billAmount || parseFloat(billAmount) < 0}
+                  onClick={() => saveStatus(selectedStatus, null, null)}
+                  className="w-full rounded bg-indigo-600 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {loading ? 'Saving...' : `Confirm as ${selectedStatus}`}
+                </button>
+              </div>
+            )}
+
             {/* Payment Date & Amount inputs if PARTIAL is selected */}
             {selectedStatus === 'partial' && (
               <div className="mt-3.5 pt-3.5 border-t border-slate-100 space-y-2">
@@ -140,11 +178,11 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
                   type="number"
                   step="0.001"
                   min="0.001"
-                  max={payable.amount}
-                  placeholder={`Max: ${payable.amount}`}
+                  max={payable.category_id === 'cat-8' ? parseFloat(billAmount) : payable.amount}
+                  placeholder={`Max: ${payable.category_id === 'cat-8' ? billAmount : payable.amount}`}
                   value={partialAmount}
                   onChange={(e) => setPartialAmount(e.target.value)}
-                  className="w-full rounded border border-slate-200 bg-slate-50 py-1 px-2 text-xs text-slate-850 outline-none focus:border-indigo-500"
+                  className="w-full rounded border border-slate-200 bg-slate-50 py-1 px-2 text-xs text-slate-850 outline-none focus:border-indigo-500 font-numeric"
                 />
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
                   Payment Date
@@ -159,7 +197,7 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
                   />
                 </div>
                 <button
-                  disabled={loading || !partialAmount || parseFloat(partialAmount) <= 0 || parseFloat(partialAmount) > payable.amount}
+                  disabled={loading || !partialAmount || parseFloat(partialAmount) <= 0 || parseFloat(partialAmount) > (payable.category_id === 'cat-8' ? parseFloat(billAmount) : payable.amount)}
                   onClick={() => saveStatus('partial', paymentDate, parseFloat(partialAmount))}
                   className="w-full rounded bg-indigo-600 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
                 >
@@ -184,9 +222,9 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
                   />
                 </div>
                 <button
-                  disabled={loading}
+                  disabled={loading || (payable.category_id === 'cat-8' && (!billAmount || parseFloat(billAmount) < 0))}
                   onClick={() => saveStatus('paid', paymentDate, null)}
-                  className="w-full rounded bg-indigo-600 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
+                  className="w-full rounded bg-indigo-600 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
                 >
                   {loading ? 'Saving...' : 'Confirm Paid'}
                 </button>
