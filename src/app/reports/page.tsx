@@ -853,114 +853,141 @@ function ReportsContent() {
 
           {/* Section 3: Highly Detailed Ledger Grouped by Category */}
           <div className="space-y-6">
-            <h4 data-pdf-section className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Detailed Transaction Ledger (Grouped by Category)
-            </h4>
-            
-            {categories.map((cat) => {
-              const catPayables = filteredPayables
-                .filter((p) => p.category_id === cat.id)
-                .sort((a, b) => a.due_date.localeCompare(b.due_date));
+            {(() => {
+              // Find the first category that has payables
+              let firstVisibleCatId: string | null = null;
+              for (const cat of categories) {
+                const hasPayables = filteredPayables.some((p) => p.category_id === cat.id);
+                if (hasPayables) {
+                  firstVisibleCatId = cat.id;
+                  break;
+                }
+              }
 
-              if (catPayables.length === 0) return null;
+              return categories.map((cat) => {
+                const catPayables = filteredPayables
+                  .filter((p) => p.category_id === cat.id)
+                  .sort((a, b) => a.due_date.localeCompare(b.due_date));
 
-              const catTotal = catPayables.reduce((sum, p) => sum + p.amount, 0);
-              const catPaid = catPayables.reduce((sum, p) => {
-                if (p.status === 'paid') return sum + p.amount;
-                if (p.status === 'partial') return sum + (p.paid_amount || 0);
-                return sum;
-              }, 0);
-              const catPending = catPayables.reduce((sum, p) => {
-                if (p.status === 'pending' || p.status === 'overdue') return sum + p.amount;
-                if (p.status === 'partial') return sum + (p.amount - (p.paid_amount || 0));
-                return sum;
-              }, 0);
+                if (catPayables.length === 0) return null;
 
-              return (
-                <div key={cat.id} data-pdf-section className="space-y-2 bg-slate-50/50 p-4 rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                      <span className={cn("h-2 w-2 rounded-full",
-                        cat.color === 'blue' ? 'bg-blue-500' :
-                        cat.color === 'violet' ? 'bg-violet-500' :
-                        cat.color === 'amber' ? 'bg-amber-500' :
-                        cat.color === 'orange' ? 'bg-orange-500' :
-                        cat.color === 'green' ? 'bg-emerald-500' :
-                        cat.color === 'rose' ? 'bg-rose-500' :
-                        cat.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
-                      )} />
-                      {cat.name}
-                    </h5>
-                    <span className="text-[10px] text-slate-400 font-semibold uppercase">
-                      {catPayables.length} {catPayables.length === 1 ? 'record' : 'records'}
-                    </span>
-                  </div>
+                const catTotal = catPayables.reduce((sum, p) => sum + p.amount, 0);
+                const catPaid = catPayables.reduce((sum, p) => {
+                  if (p.status === 'paid') return sum + p.amount;
+                  if (p.status === 'partial') return sum + (p.paid_amount || 0);
+                  return sum;
+                }, 0);
+                const catPending = catPayables.reduce((sum, p) => {
+                  if (p.status === 'pending' || p.status === 'overdue') return sum + p.amount;
+                  if (p.status === 'partial') return sum + (p.amount - (p.paid_amount || 0));
+                  return sum;
+                }, 0);
 
-                  <div className="overflow-hidden bg-white rounded-lg border border-slate-200">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider">
-                          <th className="py-2 px-3">Due Date</th>
-                          <th className="py-2 px-3">Vendor &amp; Details</th>
-                          <th className="py-2 px-3">Ref No.</th>
-                          <th className="py-2 px-3 text-right">Amount (OMR)</th>
-                          <th className="py-2 px-3 text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {catPayables.map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50/30">
-                            <td className="py-2 px-3 font-numeric text-slate-500">
-                              {format(parseISO(p.due_date), 'dd MMM yyyy')}
-                            </td>
-                            <td className="py-2 px-3 whitespace-pre-wrap break-words min-w-[200px]">
-                              <span className="font-bold text-slate-950 block text-[13px]">{p.vendor_name || '—'}</span>
-                              <span className="font-medium text-slate-700 block mt-1" title={p.title}>{p.title}</span>
-                              {p.notes && (
-                                <span className="text-[11px] text-slate-500 block mt-1 leading-relaxed whitespace-pre-wrap break-words">{p.notes}</span>
-                              )}
-                              {p.pdc && p.pdc.cheque_no && (
-                                <span className="text-[10px] text-orange-600 font-semibold block mt-1">
-                                  Cheque #{p.pdc.cheque_no} • {p.pdc.bank_name || '—'} (Status: {p.pdc.status})
+                const isFirst = cat.id === firstVisibleCatId;
+
+                const cardContent = (
+                  <div className="space-y-2 bg-slate-50/50 p-4 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                        <span className={cn("h-2 w-2 rounded-full",
+                          cat.color === 'blue' ? 'bg-blue-500' :
+                          cat.color === 'violet' ? 'bg-violet-500' :
+                          cat.color === 'amber' ? 'bg-amber-500' :
+                          cat.color === 'orange' ? 'bg-orange-500' :
+                          cat.color === 'green' ? 'bg-emerald-500' :
+                          cat.color === 'rose' ? 'bg-rose-500' :
+                          cat.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
+                        )} />
+                        {cat.name}
+                      </h5>
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase">
+                        {catPayables.length} {catPayables.length === 1 ? 'record' : 'records'}
+                      </span>
+                    </div>
+
+                    <div className="overflow-hidden bg-white rounded-lg border border-slate-200">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider">
+                            <th className="py-2 px-3">Due Date</th>
+                            <th className="py-2 px-3">Vendor &amp; Details</th>
+                            <th className="py-2 px-3">Ref No.</th>
+                            <th className="py-2 px-3 text-right">Amount (OMR)</th>
+                            <th className="py-2 px-3 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {catPayables.map((p) => (
+                            <tr key={p.id} className="hover:bg-slate-50/30">
+                              <td className="py-2 px-3 font-numeric text-slate-500">
+                                {format(parseISO(p.due_date), 'dd MMM yyyy')}
+                              </td>
+                              <td className="py-2 px-3 whitespace-pre-wrap break-words min-w-[200px]">
+                                <span className="font-bold text-slate-950 block text-[13px]">{p.vendor_name || '—'}</span>
+                                <span className="font-medium text-slate-700 block mt-1" title={p.title}>{p.title}</span>
+                                {p.notes && (
+                                  <span className="text-[11px] text-slate-500 block mt-1 leading-relaxed whitespace-pre-wrap break-words">{p.notes}</span>
+                                )}
+                                {p.pdc && p.pdc.cheque_no && (
+                                  <span className="text-[10px] text-orange-600 font-semibold block mt-1">
+                                    Cheque #{p.pdc.cheque_no} • {p.pdc.bank_name || '—'} (Status: {p.pdc.status})
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 font-numeric text-slate-500">{p.reference_no || '—'}</td>
+                              <td className="py-2 px-3 text-right font-bold text-slate-800 font-numeric">{formatOMR(p.amount)}</td>
+                              <td className="py-2 px-3 text-center">
+                                <span className={cn(
+                                  "inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide border",
+                                  p.status === 'paid' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' :
+                                  p.status === 'partial' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' :
+                                  p.status === 'overdue' ? 'bg-rose-500/10 text-rose-600 border-rose-500/20' :
+                                  p.status === 'cancelled' ? 'bg-slate-500/10 text-slate-500 border-slate-500/20' :
+                                  'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                                )}>
+                                  {p.status === 'partial' && p.paid_amount ? `partial (${p.paid_amount})` : p.status}
                                 </span>
-                              )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
+                            <td colSpan={3} className="py-2.5 px-3 text-slate-500 text-[10px] uppercase tracking-wider">
+                              Section Subtotal ({cat.name})
                             </td>
-                            <td className="py-2 px-3 font-numeric text-slate-500">{p.reference_no || '—'}</td>
-                            <td className="py-2 px-3 text-right font-bold text-slate-800 font-numeric">{formatOMR(p.amount)}</td>
-                            <td className="py-2 px-3 text-center">
-                              <span className={cn(
-                                "inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide border",
-                                p.status === 'paid' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' :
-                                p.status === 'partial' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' :
-                                p.status === 'overdue' ? 'bg-rose-500/10 text-rose-600 border-rose-500/20' :
-                                p.status === 'cancelled' ? 'bg-slate-500/10 text-slate-500 border-slate-500/20' :
-                                'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                              )}>
-                                {p.status === 'partial' && p.paid_amount ? `partial (${p.paid_amount})` : p.status}
-                              </span>
+                            <td className="py-2.5 px-3 text-right font-numeric text-slate-950 font-bold">
+                              {formatOMR(catTotal)}
+                            </td>
+                            <td className="py-2.5 px-3 text-center text-[9px] text-slate-500 font-numeric whitespace-nowrap">
+                              Paid: <span className="text-emerald-600 font-bold">{catPayables.filter(p => p.status === 'paid' || p.status === 'partial').length}</span> | 
+                              Due: <span className="text-amber-600 font-bold">{catPayables.filter(p => p.status === 'pending' || p.status === 'overdue' || p.status === 'partial').length}</span>
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
-                          <td colSpan={3} className="py-2.5 px-3 text-slate-500 text-[10px] uppercase tracking-wider">
-                            Section Subtotal ({cat.name})
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-numeric text-slate-950 font-bold">
-                            {formatOMR(catTotal)}
-                          </td>
-                          <td className="py-2.5 px-3 text-center text-[9px] text-slate-500 font-numeric whitespace-nowrap">
-                            Paid: <span className="text-emerald-600 font-bold">{catPayables.filter(p => p.status === 'paid' || p.status === 'partial').length}</span> | 
-                            Due: <span className="text-amber-600 font-bold">{catPayables.filter(p => p.status === 'pending' || p.status === 'overdue' || p.status === 'partial').length}</span>
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+
+                if (isFirst) {
+                  return (
+                    <div key={cat.id} data-pdf-section className="space-y-6">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        Detailed Transaction Ledger (Grouped by Category)
+                      </h4>
+                      {cardContent}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={cat.id} data-pdf-section className="space-y-6">
+                    {cardContent}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       </div>
