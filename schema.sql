@@ -14,7 +14,8 @@ INSERT INTO categories (id, name, icon, color) VALUES
   ('cat-4', 'PDC', 'Receipt', 'orange'),
   ('cat-5', 'Petty Cash', 'Wallet', 'green'),
   ('cat-6', 'Tax', 'Scale', 'rose'),
-  ('cat-7', 'Other', 'MoreHorizontal', 'slate')
+  ('cat-7', 'Other', 'MoreHorizontal', 'slate'),
+  ('cat-8', 'Utility Payments', 'Zap', 'cyan')
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Create Vendors Table

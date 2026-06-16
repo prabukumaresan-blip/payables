@@ -90,7 +90,8 @@ export const SEEDED_CATEGORIES: Category[] = [
   { id: 'cat-4', name: 'PDC', icon: 'Receipt', color: 'orange' },
   { id: 'cat-5', name: 'Petty Cash', icon: 'Wallet', color: 'green' },
   { id: 'cat-6', name: 'Tax', icon: 'Scale', color: 'rose' },
-  { id: 'cat-7', name: 'Other', icon: 'MoreHorizontal', color: 'slate' }
+  { id: 'cat-7', name: 'Other', icon: 'MoreHorizontal', color: 'slate' },
+  { id: 'cat-8', name: 'Utility Payments', icon: 'Zap', color: 'cyan' }
 ];
 
 const getStorageKey = (key: string) => `payables_tracker_v2_${key}`;
@@ -112,6 +113,13 @@ export const getMockDb = () => {
   const storedCats = localStorage.getItem(getStorageKey('categories'));
   if (storedCats) {
     categories = JSON.parse(storedCats);
+    // Auto-merge new categories not present in local storage
+    const storedIds = categories.map((c: any) => c.id);
+    const missingCats = SEEDED_CATEGORIES.filter(c => !storedIds.includes(c.id));
+    if (missingCats.length > 0) {
+      categories = [...categories, ...missingCats];
+      localStorage.setItem(getStorageKey('categories'), JSON.stringify(categories));
+    }
   } else {
     localStorage.setItem(getStorageKey('categories'), JSON.stringify(SEEDED_CATEGORIES));
   }

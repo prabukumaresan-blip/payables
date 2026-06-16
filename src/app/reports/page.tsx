@@ -431,7 +431,7 @@ function ReportsContent() {
         const outstanding = p.status === 'paid' || p.status === 'cancelled' ? 0 : (p.status === 'partial' ? p.amount - (p.paid_amount || 0) : p.amount);
 
         let titleText = p.title;
-        if (p.pdc) {
+        if (p.pdc && p.pdc.cheque_no) {
           titleText += ` (Cheque #${p.pdc.cheque_no} • ${p.pdc.bank_name || '—'} - Status: ${p.pdc.status})`;
         }
 
@@ -525,27 +525,25 @@ function ReportsContent() {
             yPosition = margin;
           }
 
-          let heightLeft = imgHeight;
-          let srcY = 0; // vertical offset tracker in pixels relative to original canvas scale
+          const maxContentHeightPx = (maxContentHeight * canvas.width) / imgWidth;
+          let pixelsLeft = canvas.height;
+          let srcY = 0;
 
-          while (heightLeft > 0) {
-            const chunkHeight = Math.min(heightLeft, maxContentHeight);
+          while (pixelsLeft > 0) {
+            const chunkHeightPx = Math.min(pixelsLeft, maxContentHeightPx);
+            const roundedChunkHeightPx = Math.round(chunkHeightPx);
             
             // Create a temporary crop canvas to extract the page segment
             const cropCanvas = document.createElement('canvas');
             cropCanvas.width = canvas.width;
-            cropCanvas.height = (chunkHeight * canvas.width) / imgWidth;
+            cropCanvas.height = roundedChunkHeightPx;
             
             const ctx = cropCanvas.getContext('2d');
             if (ctx) {
-              // Map heights back to original canvas pixel height scale
-              const srcHeight = (chunkHeight * canvas.width) / imgWidth;
-              const sourceYPosition = (srcY * canvas.width) / imgWidth;
-
               ctx.drawImage(
                 canvas,
-                0, sourceYPosition, // sx, sy
-                canvas.width, srcHeight, // sWidth, sHeight
+                0, srcY, // sx, sy
+                canvas.width, roundedChunkHeightPx, // sWidth, sHeight
                 0, 0, // dx, dy
                 cropCanvas.width, cropCanvas.height // dWidth, dHeight
               );
@@ -559,17 +557,18 @@ function ReportsContent() {
               yPosition = margin;
             }
 
-            pdf.addImage(chunkImgData, 'PNG', margin, yPosition, imgWidth, chunkHeight);
+            const destHeight = (roundedChunkHeightPx * imgWidth) / canvas.width;
+            pdf.addImage(chunkImgData, 'PNG', margin, yPosition, imgWidth, destHeight);
             isFirstPage = false;
             
-            heightLeft -= chunkHeight;
-            srcY += chunkHeight;
+            pixelsLeft -= roundedChunkHeightPx;
+            srcY += roundedChunkHeightPx;
             
-            if (heightLeft > 0) {
+            if (pixelsLeft > 0) {
               pdf.addPage();
               yPosition = margin;
             } else {
-              yPosition += chunkHeight + 6;
+              yPosition += destHeight + 6;
             }
           }
         } 
@@ -675,7 +674,10 @@ function ReportsContent() {
         <div 
           ref={reportRef} 
           id="report-document" 
-          className="p-8 rounded-2xl border border-slate-200 bg-white space-y-8 shadow-sm relative overflow-hidden text-slate-850"
+          className={cn(
+            "p-8 rounded-2xl border border-slate-200 bg-white space-y-8 shadow-sm relative overflow-hidden text-slate-850",
+            generatingPDF && "pdf-render-mode"
+          )}
         >
           {/* Section 1: Document Header & KPI Grid */}
           <div data-pdf-section className="space-y-8 border-b border-slate-100 pb-6">
@@ -742,24 +744,44 @@ function ReportsContent() {
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">
                     Expense Weight per Category
                   </h4>
-                  <div className="h-44 relative flex items-center justify-center">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
+                  <div className="relative flex items-center justify-center" style={generatingPDF ? { height: '240px' } : { height: '176px' }}>
+                    {!generatingPDF ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={chartData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={45}
+                            outerRadius={65}
+                            paddingAngle={3}
+                            dataKey="value"
+                            isAnimationActive={true}
+                          >
+                            {chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} stroke="#FFFFFF" strokeWidth={2} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <PieChart width={240} height={240}>
                         <Pie
                           data={chartData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={45}
-                          outerRadius={65}
+                          cx={120}
+                          cy={120}
+                          innerRadius={55}
+                          outerRadius={85}
                           paddingAngle={3}
                           dataKey="value"
+                          isAnimationActive={false}
                         >
                           {chartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} stroke="#FFFFFF" strokeWidth={2} />
                           ))}
                         </Pie>
                       </PieChart>
-                    </ResponsiveContainer>
+                    )}
                   </div>
                 </div>
 
@@ -775,7 +797,8 @@ function ReportsContent() {
                           c.color === 'amber' ? 'bg-amber-500' :
                           c.color === 'orange' ? 'bg-orange-500' :
                           c.color === 'green' ? 'bg-emerald-500' :
-                          c.color === 'rose' ? 'bg-rose-500' : 'bg-slate-500'
+                          c.color === 'rose' ? 'bg-rose-500' :
+                          c.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
                         )} />
                         <span className="text-slate-600">{c.name}</span>
                       </div>
@@ -863,7 +886,8 @@ function ReportsContent() {
                         cat.color === 'amber' ? 'bg-amber-500' :
                         cat.color === 'orange' ? 'bg-orange-500' :
                         cat.color === 'green' ? 'bg-emerald-500' :
-                        cat.color === 'rose' ? 'bg-rose-500' : 'bg-slate-500'
+                        cat.color === 'rose' ? 'bg-rose-500' :
+                        cat.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
                       )} />
                       {cat.name}
                     </h5>
@@ -895,7 +919,7 @@ function ReportsContent() {
                               {p.notes && (
                                 <span className="text-[11px] text-slate-500 block mt-1 leading-relaxed whitespace-pre-wrap break-words">{p.notes}</span>
                               )}
-                              {p.pdc && (
+                              {p.pdc && p.pdc.cheque_no && (
                                 <span className="text-[10px] text-orange-600 font-semibold block mt-1">
                                   Cheque #{p.pdc.cheque_no} • {p.pdc.bank_name || '—'} (Status: {p.pdc.status})
                                 </span>
