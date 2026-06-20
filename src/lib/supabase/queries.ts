@@ -355,11 +355,16 @@ export async function updatePayable(
 ): Promise<Payable> {
   const db = getMockDb();
   const index = db.payables.findIndex((p) => p.id === id);
-  if (index === -1) throw new Error('Payable not found');
+  let original: Payable | null = index !== -1 ? db.payables[index] : null;
+
+  if (!original) {
+    original = await getPayableById(id);
+    if (!original) {
+      throw new Error('Payable not found');
+    }
+  }
 
   const now = new Date().toISOString();
-  const original = db.payables[index];
-
   const updatedPayable: Payable = {
     ...original,
     ...updatedFields,
@@ -454,7 +459,11 @@ export async function updatePayable(
     }
   }
 
-  db.payables[index] = updatedPayable;
+  if (index !== -1) {
+    db.payables[index] = updatedPayable;
+  } else {
+    db.payables.push(updatedPayable);
+  }
   saveMockPayables(db.payables);
 
   return updatedPayable;
@@ -564,6 +573,24 @@ export async function updatePayableStatus(
 }
 
 export async function getPdcs(filters: { status?: string } = {}): Promise<Payable[]> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { data, error } = await supabase
+      .from('payables')
+      .select('*, category:categories(*), pdc:pdcs(*)');
+      
+    if (!error && data) {
+      // Filter in JS to find payables with PDC
+      let results = (data as any[]).filter(p => p.category_id === 'cat-4' || p.pdc);
+      
+      if (filters.status && filters.status !== 'all') {
+        results = results.filter(p => p.pdc?.status === filters.status);
+      }
+      
+      return results as Payable[];
+    }
+  }
+
   const db = getMockDb();
   let payablesWithPdc = db.payables.filter((p) => p.category_id === 'cat-4' || p.pdc);
 
@@ -673,13 +700,52 @@ export async function createVendor(vendorData: Omit<Vendor, 'id'>): Promise<Vend
   
   if (!useMock()) {
     const supabase = createBrowserSupabase();
-    await supabase.from('vendors').insert(newVendor);
+    const { error } = await supabase.from('vendors').insert(newVendor);
+    if (error) {
+      console.error('Error inserting vendor into Supabase:', error);
+      throw error;
+    }
   }
   
   const db = getMockDb();
   const updatedList = [...db.vendors, newVendor];
   saveMockVendors(updatedList);
   return newVendor;
+}
+
+export async function updateVendor(id: string, vendorData: Partial<Omit<Vendor, 'id' | 'created_at'>>): Promise<Vendor> {
+  const db = getMockDb();
+  const index = db.vendors.findIndex(v => v.id === id);
+  
+  let original: Vendor = { id, name: '' };
+  if (index !== -1) {
+    original = db.vendors[index];
+  }
+
+  const updatedVendor: Vendor = {
+    ...original,
+    ...vendorData,
+  };
+
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase
+      .from('vendors')
+      .update(vendorData)
+      .eq('id', id);
+    if (error) {
+      console.error('Error updating vendor in Supabase:', error);
+      throw error;
+    }
+  }
+
+  if (index !== -1) {
+    db.vendors[index] = updatedVendor;
+  } else {
+    db.vendors.push(updatedVendor);
+  }
+  saveMockVendors(db.vendors);
+  return updatedVendor;
 }
 
 export async function deleteVendor(id: string): Promise<boolean> {

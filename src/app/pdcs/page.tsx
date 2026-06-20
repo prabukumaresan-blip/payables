@@ -116,7 +116,7 @@ function PdcsContent() {
                 <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
                   {pdcPayables.map((payable) => {
                     const pdc = payable.pdc;
-                    if (!pdc) return null;
+                    if (!pdc || !pdc.cheque_date || !pdc.cheque_no) return null;
                     const isBounced = pdc.status === 'bounced';
                     return (
                       <tr key={payable.id} className="hover:bg-slate-50/50 transition-colors">
