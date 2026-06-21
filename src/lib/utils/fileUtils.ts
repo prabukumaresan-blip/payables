@@ -309,7 +309,6 @@ export function generatePaymentExcelFile(
     combined = combined.replace(/\s+/g, ' ');
     return combined.substring(0, 30).toUpperCase();
   };
-
   // Check if any selected vendor is an OTHER BANK vendor
   const isOtherBank = selectedPayables.some(p => {
     const v = vendors.find(vendor => vendor.name === p.vendor_name);
@@ -452,7 +451,7 @@ export function generatePaymentExcelFile(
   }
 
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  
+
   const filename = isOtherBank 
     ? `VP_Other_${uniqueId || 'EXPORT'}.xlsx` 
     : `VP_Muscat_${uniqueId || 'EXPORT'}.xlsx`;

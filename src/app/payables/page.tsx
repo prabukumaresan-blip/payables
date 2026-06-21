@@ -178,7 +178,6 @@ function PayablesContent() {
       return !v || v.bank_type !== 'OTHER_BANK';
     });
   }, [payables, selectedIds, vendorsList]);
-
   // Category Icon Renderer
   const renderCategoryIcon = (iconName: string, color: string) => {
     const icons: Record<string, any> = {
