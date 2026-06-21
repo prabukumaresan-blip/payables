@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS vendors (
   bank_account TEXT,
   bank_name TEXT,
   account_no TEXT,
+  swift_code TEXT,
+  bank_type TEXT DEFAULT 'BANK_MUSCAT',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

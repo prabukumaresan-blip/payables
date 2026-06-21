@@ -101,6 +101,8 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
   const [newVendorBankName, setNewVendorBankName] = React.useState('');
   const [newVendorAccountNo, setNewVendorAccountNo] = React.useState('');
   const [newVendorEmail, setNewVendorEmail] = React.useState('');
+  const [newVendorSwiftCode, setNewVendorSwiftCode] = React.useState('');
+  const [newVendorBankType, setNewVendorBankType] = React.useState<'BANK_MUSCAT' | 'OTHER_BANK'>('BANK_MUSCAT');
 
   // Watch selected vendor
   const selectedVendorName = useWatch({ control, name: 'vendor_name' });
@@ -151,8 +153,12 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
   useEffect(() => {
     if (selectedVendorName) {
       const found = vendors.find(v => v.name === selectedVendorName);
-      if (found && found.bank_account) {
-        setValue('bank_account', found.bank_account);
+      if (found) {
+        if (found.bank_account) {
+          setValue('bank_account', found.bank_account);
+        } else if (found.account_no) {
+          setValue('bank_account', found.account_no);
+        }
       }
     }
   }, [selectedVendorName, vendors, setValue]);
@@ -426,7 +432,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
             />
           ) : showAddVendor ? (
             <div className="rounded-lg border border-indigo-100 bg-indigo-50/30 p-3 space-y-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <input
                   type="text"
                   placeholder="New Vendor Name *"
@@ -441,11 +447,19 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                   onChange={(e) => setNewVendorEmail(e.target.value)}
                   className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
                 />
+                <select
+                  value={newVendorBankType}
+                  onChange={(e) => setNewVendorBankType(e.target.value as 'BANK_MUSCAT' | 'OTHER_BANK')}
+                  className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                >
+                  <option value="BANK_MUSCAT">BANK MUSCAT</option>
+                  <option value="OTHER_BANK">OTHER BANK</option>
+                </select>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <input
                   type="text"
-                  placeholder="Bank Name (e.g. Bank Muscat)"
+                  placeholder="Bank Name"
                   value={newVendorBankName}
                   onChange={(e) => setNewVendorBankName(e.target.value)}
                   className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
@@ -457,6 +471,13 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                   onChange={(e) => setNewVendorAccountNo(e.target.value)}
                   className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
                 />
+                <input
+                  type="text"
+                  placeholder="SWIFT Code"
+                  value={newVendorSwiftCode}
+                  onChange={(e) => setNewVendorSwiftCode(e.target.value)}
+                  className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                />
               </div>
               <button
                 type="button"
@@ -465,6 +486,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                   try {
                     const bName = newVendorBankName.trim();
                     const accNo = newVendorAccountNo.trim();
+                    const swiftCode = newVendorSwiftCode.trim();
                     let combinedBankAcc = null;
                     if (bName && accNo) {
                       combinedBankAcc = `${bName} - ${accNo}`;
@@ -476,6 +498,8 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                       name: newVendorName.trim(),
                       bank_name: bName || null,
                       account_no: accNo || null,
+                      swift_code: swiftCode || null,
+                      bank_type: newVendorBankType,
                       bank_account: combinedBankAcc,
                       email: newVendorEmail.trim() || null
                     });
@@ -489,6 +513,8 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                     setNewVendorBankName('');
                     setNewVendorAccountNo('');
                     setNewVendorEmail('');
+                    setNewVendorSwiftCode('');
+                    setNewVendorBankType('BANK_MUSCAT');
                   } catch (err) {
                     console.error('Error creating vendor:', err);
                   }

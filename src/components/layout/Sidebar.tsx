@@ -51,6 +51,11 @@ export default function Sidebar({ className }: SidebarProps) {
       icon: Receipt
     },
     {
+      label: 'Vendors',
+      href: '/vendors',
+      icon: Building2
+    },
+    {
       label: 'Reports',
       href: '/reports',
       icon: BarChart3

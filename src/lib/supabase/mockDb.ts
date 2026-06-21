@@ -16,6 +16,8 @@ export interface Vendor {
   bank_account?: string | null;
   bank_name?: string | null;
   account_no?: string | null;
+  swift_code?: string | null;
+  bank_type?: 'BANK_MUSCAT' | 'OTHER_BANK' | null;
   created_at?: string;
 }
 
