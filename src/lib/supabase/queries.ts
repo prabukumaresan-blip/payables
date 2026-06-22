@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, createClient as createBrowserSupabase } from './client';
-import { getMockDb, saveMockPayables, saveMockVendors, saveMockEmployees, SEEDED_CATEGORIES, Payable, PDC, Category, LoanSchedule, Vendor, Employee } from './mockDb';
+import { getMockDb, saveMockPayables, saveMockVendors, saveMockEmployees, saveMockPaymentHistory, saveMockLandowners, SEEDED_CATEGORIES, Payable, PDC, Category, LoanSchedule, Vendor, Employee, Landowner, PaymentHistory } from './mockDb';
 import { format, parse, addMonths, compareAsc, addWeeks, endOfMonth } from 'date-fns';
 
 // Helper to determine if we should use mock database
@@ -92,7 +92,7 @@ export async function getPayableById(id: string): Promise<Payable | null> {
     const supabase = createBrowserSupabase();
     const { data, error } = await supabase
       .from('payables')
-      .select('*, pdc:pdcs(*), loan:loan_schedule(*)')
+      .select('*, pdc:pdcs(*), loan:loan_schedule(*), payments:payment_history(*)')
       .eq('id', id)
       .single();
     if (!error && data) return data;
@@ -106,7 +106,8 @@ export async function getPayableById(id: string): Promise<Payable | null> {
     ...payable,
     category: db.categories.find(c => c.id === payable.category_id),
     pdc: db.pdcs.find(pdc => pdc.payable_id === payable.id),
-    loan: db.loan_schedule.find(l => l.payable_id === payable.id)
+    loan: db.loan_schedule.find(l => l.payable_id === payable.id),
+    payments: (db.payment_history || []).filter(ph => ph.payable_id === payable.id)
   } as Payable;
 }
 
@@ -364,10 +365,32 @@ export async function updatePayable(
     }
   }
 
+  let finalPaidAmount = updatedFields.paid_amount;
+  let finalPaymentDate = updatedFields.payment_date;
+
+  if (updatedFields.status !== undefined || updatedFields.paid_amount !== undefined) {
+    const syncRes = await syncPaymentHistoryOnStatusChange(
+      id,
+      original.status,
+      updatedFields.status !== undefined ? updatedFields.status : original.status,
+      updatedFields.amount !== undefined ? updatedFields.amount : original.amount,
+      updatedFields.paid_amount,
+      updatedFields.payment_date !== undefined ? updatedFields.payment_date : original.payment_date
+    );
+    finalPaidAmount = syncRes.newPaidAmount;
+    finalPaymentDate = syncRes.newPaymentDate;
+  }
+
+  const fieldsToUpdate = {
+    ...updatedFields,
+    paid_amount: finalPaidAmount,
+    payment_date: finalPaymentDate
+  };
+
   const now = new Date().toISOString();
   const updatedPayable: Payable = {
     ...original,
-    ...updatedFields,
+    ...fieldsToUpdate,
     updated_at: now
   } as Payable;
 
@@ -405,7 +428,7 @@ export async function updatePayable(
     const supabase = createBrowserSupabase();
     
     // Extract base payable fields (excluding relations: pdc, loan, category)
-    const { pdc: pdcUpdate, loan: loanUpdate, category, ...payableFields } = updatedFields;
+    const { pdc: pdcUpdate, loan: loanUpdate, category, ...payableFields } = fieldsToUpdate;
     
     if (Object.keys(payableFields).length > 0) {
       const { error: payableError } = await supabase
@@ -791,5 +814,358 @@ export async function createEmployee(employeeData: Omit<Employee, 'id'>): Promis
   const updatedList = [...db.employees, newEmployee];
   saveMockEmployees(updatedList);
   return newEmployee;
+}
+
+export async function updateEmployee(
+  id: string,
+  employeeData: Partial<Omit<Employee, 'id' | 'created_at'>>
+): Promise<Employee> {
+  const db = getMockDb();
+  const index = db.employees.findIndex(e => e.id === id);
+  
+  let original: Employee = { id, name: '' };
+  if (index !== -1) {
+    original = db.employees[index];
+  }
+
+  const updatedEmployee: Employee = {
+    ...original,
+    ...employeeData,
+  };
+
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase
+      .from('employees')
+      .update(employeeData)
+      .eq('id', id);
+    if (error) {
+      console.error('Error updating employee in Supabase:', error);
+      throw error;
+    }
+  }
+
+  if (index !== -1) {
+    db.employees[index] = updatedEmployee;
+  } else {
+    db.employees.push(updatedEmployee);
+  }
+  saveMockEmployees(db.employees);
+  return updatedEmployee;
+}
+
+export async function deleteEmployee(id: string): Promise<boolean> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.from('employees').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting employee from Supabase:', error);
+      throw error;
+    }
+  }
+  
+  const db = getMockDb();
+  const countBefore = db.employees.length;
+  const filtered = db.employees.filter(e => e.id !== id);
+  saveMockEmployees(filtered);
+  return filtered.length < countBefore;
+}
+
+// Landowners CRUD Operations
+
+export async function getLandowners(): Promise<Landowner[]> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { data, error } = await supabase.from('landowners').select('*').order('name');
+    if (!error && data) return data;
+  }
+  return getMockDb().landowners.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function createLandowner(landownerData: Omit<Landowner, 'id'>): Promise<Landowner> {
+  const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'l-' + Math.random().toString(36).substr(2, 9);
+  const newLandowner: Landowner = {
+    ...landownerData,
+    id: newId,
+    created_at: new Date().toISOString()
+  };
+  
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.from('landowners').insert(newLandowner);
+    if (error) {
+      console.error('Error inserting landowner into Supabase:', error);
+      throw error;
+    }
+  }
+  
+  const db = getMockDb();
+  const updatedList = [...db.landowners, newLandowner];
+  saveMockLandowners(updatedList);
+  return newLandowner;
+}
+
+export async function updateLandowner(
+  id: string,
+  landownerData: Partial<Omit<Landowner, 'id' | 'created_at'>>
+): Promise<Landowner> {
+  const db = getMockDb();
+  const index = db.landowners.findIndex(l => l.id === id);
+  
+  let original: Landowner = { id, name: '' };
+  if (index !== -1) {
+    original = db.landowners[index];
+  }
+
+  const updatedLandowner: Landowner = {
+    ...original,
+    ...landownerData,
+  };
+
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase
+      .from('landowners')
+      .update(landownerData)
+      .eq('id', id);
+    if (error) {
+      console.error('Error updating landowner in Supabase:', error);
+      throw error;
+    }
+  }
+
+  if (index !== -1) {
+    db.landowners[index] = updatedLandowner;
+  } else {
+    db.landowners.push(updatedLandowner);
+  }
+  saveMockLandowners(db.landowners);
+  return updatedLandowner;
+}
+
+export async function deleteLandowner(id: string): Promise<boolean> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.from('landowners').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting landowner from Supabase:', error);
+      throw error;
+    }
+  }
+  
+  const db = getMockDb();
+  const countBefore = db.landowners.length;
+  const filtered = db.landowners.filter(l => l.id !== id);
+  saveMockLandowners(filtered);
+  return filtered.length < countBefore;
+}
+
+// Payment History CRUD & Management Functions
+
+export async function getPaymentHistory(payableId: string): Promise<PaymentHistory[]> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { data, error } = await supabase
+      .from('payment_history')
+      .select('*')
+      .eq('payable_id', payableId)
+      .order('payment_date', { ascending: false });
+    if (!error && data) return data;
+  }
+  const db = getMockDb();
+  return (db.payment_history || [])
+    .filter((ph) => ph.payable_id === payableId)
+    .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+}
+
+export async function addPaymentRecord(
+  payment: Omit<PaymentHistory, 'id' | 'created_at'>
+): Promise<Payable> {
+  const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'pay-' + Math.random().toString(36).substr(2, 9);
+  const now = new Date().toISOString();
+  const newPayment: PaymentHistory = {
+    ...payment,
+    id: newId,
+    created_at: now
+  };
+
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error: insertError } = await supabase
+      .from('payment_history')
+      .insert(newPayment);
+    if (insertError) {
+      console.error('Error inserting payment record:', insertError);
+      throw insertError;
+    }
+  } else {
+    const db = getMockDb();
+    const historyList = [...(db.payment_history || []), newPayment];
+    saveMockPaymentHistory(historyList);
+  }
+
+  return recalculatePayableStatusAndPaidAmount(payment.payable_id);
+}
+
+export async function deletePaymentRecord(paymentId: string, payableId: string): Promise<Payable> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error: deleteError } = await supabase
+      .from('payment_history')
+      .delete()
+      .eq('id', paymentId);
+    if (deleteError) {
+      console.error('Error deleting payment record:', deleteError);
+      throw deleteError;
+    }
+  } else {
+    const db = getMockDb();
+    const filtered = (db.payment_history || []).filter((ph) => ph.id !== paymentId);
+    saveMockPaymentHistory(filtered);
+  }
+
+  return recalculatePayableStatusAndPaidAmount(payableId);
+}
+
+async function createRawPaymentRecord(payment: {
+  payable_id: string;
+  amount: number;
+  payment_date: string;
+  reference_no?: string | null;
+  bank_account?: string | null;
+  notes?: string | null;
+}): Promise<PaymentHistory> {
+  const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'pay-' + Math.random().toString(36).substr(2, 9);
+  const now = new Date().toISOString();
+  const newPayment: PaymentHistory = {
+    ...payment,
+    id: newId,
+    created_at: now
+  };
+
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.from('payment_history').insert(newPayment);
+    if (error) {
+      console.error('Error inserting raw payment record:', error);
+      throw error;
+    }
+  } else {
+    const db = getMockDb();
+    const historyList = [...(db.payment_history || []), newPayment];
+    saveMockPaymentHistory(historyList);
+  }
+
+  return newPayment;
+}
+
+async function clearPaymentHistory(payableId: string): Promise<void> {
+  if (!useMock()) {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.from('payment_history').delete().eq('payable_id', payableId);
+    if (error) {
+      console.error('Error clearing payment history:', error);
+      throw error;
+    }
+  } else {
+    const db = getMockDb();
+    const filtered = (db.payment_history || []).filter((ph) => ph.payable_id !== payableId);
+    saveMockPaymentHistory(filtered);
+  }
+}
+
+async function syncPaymentHistoryOnStatusChange(
+  payableId: string,
+  oldStatus: Payable['status'],
+  newStatus: Payable['status'],
+  newAmount: number,
+  newPaidAmount: number | null | undefined,
+  paymentDate: string | null
+): Promise<{ newPaidAmount: number | null; newPaymentDate: string | null }> {
+  const payments = await getPaymentHistory(payableId);
+  const sum = payments.reduce((s, p) => s + Number(p.amount), 0);
+
+  let finalPaidAmount = newPaidAmount !== undefined ? newPaidAmount : sum;
+  let finalPaymentDate = paymentDate;
+
+  if (newStatus === 'paid') {
+    const diff = newAmount - sum;
+    if (diff > 0) {
+      const pDate = paymentDate || format(new Date(), 'yyyy-MM-dd');
+      await createRawPaymentRecord({
+        payable_id: payableId,
+        amount: diff,
+        payment_date: pDate,
+        notes: 'Full payment status update'
+      });
+      finalPaidAmount = newAmount;
+      finalPaymentDate = pDate;
+    } else {
+      finalPaidAmount = sum > 0 ? sum : newAmount;
+      finalPaymentDate = paymentDate || (payments.length > 0 ? payments[0].payment_date : format(new Date(), 'yyyy-MM-dd'));
+    }
+  } else if (['pending', 'cancelled', 'overdue'].includes(newStatus)) {
+    if (payments.length > 0) {
+      await clearPaymentHistory(payableId);
+    }
+    finalPaidAmount = null;
+    finalPaymentDate = null;
+  } else if (newStatus === 'partial') {
+    if (newPaidAmount !== undefined && newPaidAmount !== null) {
+      const diff = newPaidAmount - sum;
+      if (Math.abs(diff) > 0.001) {
+        await clearPaymentHistory(payableId);
+        const pDate = paymentDate || format(new Date(), 'yyyy-MM-dd');
+        await createRawPaymentRecord({
+          payable_id: payableId,
+          amount: newPaidAmount,
+          payment_date: pDate,
+          notes: 'Status update sync'
+        });
+        finalPaidAmount = newPaidAmount;
+        finalPaymentDate = pDate;
+      }
+    } else {
+      finalPaidAmount = sum > 0 ? sum : 0;
+      finalPaymentDate = paymentDate || (payments.length > 0 ? payments[0].payment_date : null);
+    }
+  }
+
+  return {
+    newPaidAmount: finalPaidAmount,
+    newPaymentDate: finalPaymentDate
+  };
+}
+
+async function recalculatePayableStatusAndPaidAmount(payableId: string): Promise<Payable> {
+  const payable = await getPayableById(payableId);
+  if (!payable) {
+    throw new Error('Payable not found');
+  }
+
+  const payments = await getPaymentHistory(payableId);
+  const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+  let newStatus: Payable['status'] = 'partial';
+  if (totalPaid >= payable.amount) {
+    newStatus = 'paid';
+  } else if (totalPaid <= 0) {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    newStatus = payable.due_date < today ? 'overdue' : 'pending';
+  }
+
+  let latestPaymentDate = null;
+  if (payments.length > 0) {
+    const sorted = [...payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+    latestPaymentDate = sorted[0].payment_date;
+  }
+
+  const updated = await updatePayable(payableId, {
+    status: newStatus,
+    paid_amount: totalPaid > 0 ? totalPaid : null,
+    payment_date: latestPaymentDate
+  });
+
+  return updated;
 }
 

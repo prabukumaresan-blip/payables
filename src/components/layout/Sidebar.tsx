@@ -10,7 +10,9 @@ import {
   BarChart3, 
   LogOut, 
   Building2, 
-  CreditCard 
+  CreditCard,
+  Users,
+  Home
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -54,6 +56,16 @@ export default function Sidebar({ className }: SidebarProps) {
       label: 'Vendors',
       href: '/vendors',
       icon: Building2
+    },
+    {
+      label: 'Employees',
+      href: '/employees',
+      icon: Users
+    },
+    {
+      label: 'Landowners',
+      href: '/landowners',
+      icon: Home
     },
     {
       label: 'Reports',

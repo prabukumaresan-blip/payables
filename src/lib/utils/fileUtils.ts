@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
-import { Payable, Vendor } from '../supabase/mockDb';
+import { Payable, Vendor, Employee, Landowner } from '../supabase/mockDb';
 
 export interface ParsedPaymentRow {
   type: 'DR' | 'CR';
@@ -294,6 +294,8 @@ export function generateUniqueExportId(): string {
 export function generatePaymentExcelFile(
   selectedPayables: Payable[],
   vendors: Vendor[],
+  employees: Employee[],
+  landowners: Landowner[],
   debitAccount: string,
   debitName: string,
   remarks: string,
@@ -309,10 +311,16 @@ export function generatePaymentExcelFile(
     combined = combined.replace(/\s+/g, ' ');
     return combined.substring(0, 30).toUpperCase();
   };
+
   // Check if any selected vendor is an OTHER BANK vendor
   const isOtherBank = selectedPayables.some(p => {
     const v = vendors.find(vendor => vendor.name === p.vendor_name);
-    return v && v.bank_type === 'OTHER_BANK';
+    if (v) return v.bank_type === 'OTHER_BANK';
+    const e = employees?.find(emp => emp.name === p.vendor_name);
+    if (e) return e.bank_type === 'OTHER_BANK';
+    const l = landowners?.find(land => land.name === p.vendor_name);
+    if (l) return l.bank_type === 'OTHER_BANK';
+    return false;
   });
 
   const totalAmount = selectedPayables.reduce((sum, p) => sum + p.amount, 0);
@@ -337,7 +345,10 @@ export function generatePaymentExcelFile(
     // CR Rows
     selectedPayables.forEach(p => {
       const cleanAcc = extractAccountNumber(p.bank_account);
+      
       const vendorObj = vendors.find(v => v.name === p.vendor_name);
+      const employeeObj = employees?.find(e => e.name === p.vendor_name);
+      const landownerObj = landowners?.find(l => l.name === p.vendor_name);
 
       let accNum = cleanAcc || p.bank_account || '';
       let swiftCode = '';
@@ -345,6 +356,12 @@ export function generatePaymentExcelFile(
       if (vendorObj) {
         if (vendorObj.account_no) accNum = vendorObj.account_no;
         if (vendorObj.swift_code) swiftCode = vendorObj.swift_code;
+      } else if (employeeObj) {
+        if (employeeObj.account_no) accNum = employeeObj.account_no;
+        if (employeeObj.swift_code) swiftCode = employeeObj.swift_code || '';
+      } else if (landownerObj) {
+        if (landownerObj.account_no) accNum = landownerObj.account_no;
+        if (landownerObj.swift_code) swiftCode = landownerObj.swift_code || '';
       }
 
       const rowRemark = (individualRemarks?.[p.id] || '').trim() || remarks;
@@ -377,12 +394,19 @@ export function generatePaymentExcelFile(
     // CR Rows
     selectedPayables.forEach(p => {
       const cleanAcc = extractAccountNumber(p.bank_account);
+      
       const vendorObj = vendors.find(v => v.name === p.vendor_name);
+      const employeeObj = employees?.find(e => e.name === p.vendor_name);
+      const landownerObj = landowners?.find(l => l.name === p.vendor_name);
 
       let accNum = cleanAcc || p.bank_account || '';
 
       if (vendorObj) {
         if (vendorObj.account_no) accNum = vendorObj.account_no;
+      } else if (employeeObj) {
+        if (employeeObj.account_no) accNum = employeeObj.account_no;
+      } else if (landownerObj) {
+        if (landownerObj.account_no) accNum = landownerObj.account_no;
       }
 
       const rowRemark = (individualRemarks?.[p.id] || '').trim() || remarks;
@@ -451,7 +475,7 @@ export function generatePaymentExcelFile(
   }
 
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
+  
   const filename = isOtherBank 
     ? `VP_Other_${uniqueId || 'EXPORT'}.xlsx` 
     : `VP_Muscat_${uniqueId || 'EXPORT'}.xlsx`;
@@ -560,6 +584,306 @@ export async function parseVendorImportFile(file: File): Promise<ParsedVendorRow
           
           const rawBankType = colIndices.bankType >= 0 ? String(row[colIndices.bankType] || '').trim().toUpperCase() : 'BANK_MUSCAT';
           const bankTypeVal: 'BANK_MUSCAT' | 'OTHER_BANK' = (rawBankType === 'OTHER_BANK' || rawBankType === 'OTHER_BANK') 
+            ? 'OTHER_BANK' 
+            : 'BANK_MUSCAT';
+
+          const contactPersonVal = colIndices.contactPerson >= 0 && row[colIndices.contactPerson] !== undefined 
+            ? String(row[colIndices.contactPerson]).trim() 
+            : null;
+          const emailVal = colIndices.email >= 0 && row[colIndices.email] !== undefined 
+            ? String(row[colIndices.email]).trim() 
+            : null;
+          const phoneVal = colIndices.phone >= 0 && row[colIndices.phone] !== undefined 
+            ? String(row[colIndices.phone]).trim() 
+            : null;
+          const bankNameVal = colIndices.bankName >= 0 && row[colIndices.bankName] !== undefined 
+            ? String(row[colIndices.bankName]).trim() 
+            : null;
+          const accountNoVal = colIndices.accountNo >= 0 && row[colIndices.accountNo] !== undefined 
+            ? String(row[colIndices.accountNo]).trim() 
+            : null;
+          const swiftCodeVal = colIndices.swiftCode >= 0 && row[colIndices.swiftCode] !== undefined 
+            ? String(row[colIndices.swiftCode]).trim().toUpperCase() 
+            : null;
+
+          parsedRows.push({
+            name: nameVal,
+            bank_type: bankTypeVal,
+            contact_person: contactPersonVal || null,
+            email: emailVal || null,
+            phone: phoneVal || null,
+            bank_name: bankNameVal || null,
+            account_no: accountNoVal || null,
+            swift_code: swiftCodeVal || null,
+            rowIndex: i + 1
+          });
+        }
+
+        resolve(parsedRows);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error('File reading error'));
+    };
+
+    reader.readAsBinaryString(file);
+  });
+}
+
+export interface ParsedEmployeeRow {
+  name: string;
+  bank_type: 'BANK_MUSCAT' | 'OTHER_BANK';
+  department: string | null;
+  email: string | null;
+  phone: string | null;
+  bank_name: string | null;
+  account_no: string | null;
+  swift_code: string | null;
+  rowIndex: number;
+}
+
+export interface ParsedLandownerRow {
+  name: string;
+  bank_type: 'BANK_MUSCAT' | 'OTHER_BANK';
+  contact_person: string | null;
+  email: string | null;
+  phone: string | null;
+  bank_name: string | null;
+  account_no: string | null;
+  swift_code: string | null;
+  rowIndex: number;
+}
+
+/**
+ * Parses an Excel file containing employee details.
+ */
+export async function parseEmployeeImportFile(file: File): Promise<ParsedEmployeeRow[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        if (!data) {
+          throw new Error('Could not read file data');
+        }
+
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Convert to array of arrays
+        const jsonRows = XLSX.utils.sheet_to_json<(string | number | null | undefined)[]>(worksheet, { header: 1 });
+        
+        if (jsonRows.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        // Standard headers we look for
+        let headerIndex = 0;
+        const colIndices = {
+          name: -1,
+          bankType: -1,
+          department: -1,
+          email: -1,
+          phone: -1,
+          bankName: -1,
+          accountNo: -1,
+          swiftCode: -1
+        };
+
+        let foundHeader = false;
+        for (let i = 0; i < Math.min(10, jsonRows.length); i++) {
+          const row = jsonRows[i];
+          if (row && row.some(cell => typeof cell === 'string' && cell.toLowerCase().trim() === 'name')) {
+            headerIndex = i;
+            foundHeader = true;
+            
+            row.forEach((cell, idx) => {
+              if (cell === null || cell === undefined) return;
+              const strVal = String(cell).toLowerCase().trim();
+              if (strVal === 'name' || strVal === 'employee name' || strVal === 'employeename') colIndices.name = idx;
+              else if (strVal === 'bank type' || strVal === 'banktype') colIndices.bankType = idx;
+              else if (strVal === 'department' || strVal === 'dept') colIndices.department = idx;
+              else if (strVal === 'email' || strVal === 'email address') colIndices.email = idx;
+              else if (strVal === 'phone' || strVal === 'phone number' || strVal === 'mobile') colIndices.phone = idx;
+              else if (strVal === 'bank name' || strVal === 'bankname') colIndices.bankName = idx;
+              else if (strVal === 'account number' || strVal === 'accountno' || strVal === 'account_no' || strVal === 'account') colIndices.accountNo = idx;
+              else if (strVal === 'swift code' || strVal === 'swiftcode' || strVal === 'swift_code') colIndices.swiftCode = idx;
+            });
+            break;
+          }
+        }
+
+        // If we didn't find a header row containing 'name', look at row 0 or assume default order
+        if (!foundHeader) {
+          colIndices.name = 0;
+          colIndices.bankType = 1;
+          colIndices.department = 2;
+          colIndices.email = 3;
+          colIndices.phone = 4;
+          colIndices.bankName = 5;
+          colIndices.accountNo = 6;
+          colIndices.swiftCode = 7;
+        }
+
+        const startRow = foundHeader ? headerIndex + 1 : 1;
+        const parsedRows: ParsedEmployeeRow[] = [];
+
+        for (let i = startRow; i < jsonRows.length; i++) {
+          const row = jsonRows[i];
+          if (!row || row.length === 0) continue;
+          
+          // Skip completely empty rows
+          const hasData = row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+          if (!hasData) continue;
+
+          const nameVal = colIndices.name >= 0 ? String(row[colIndices.name] || '').trim() : '';
+          
+          const rawBankType = colIndices.bankType >= 0 ? String(row[colIndices.bankType] || '').trim().toUpperCase() : 'BANK_MUSCAT';
+          const bankTypeVal: 'BANK_MUSCAT' | 'OTHER_BANK' = (rawBankType === 'OTHER_BANK') 
+            ? 'OTHER_BANK' 
+            : 'BANK_MUSCAT';
+
+          const departmentVal = colIndices.department >= 0 && row[colIndices.department] !== undefined 
+            ? String(row[colIndices.department]).trim() 
+            : null;
+          const emailVal = colIndices.email >= 0 && row[colIndices.email] !== undefined 
+            ? String(row[colIndices.email]).trim() 
+            : null;
+          const phoneVal = colIndices.phone >= 0 && row[colIndices.phone] !== undefined 
+            ? String(row[colIndices.phone]).trim() 
+            : null;
+          const bankNameVal = colIndices.bankName >= 0 && row[colIndices.bankName] !== undefined 
+            ? String(row[colIndices.bankName]).trim() 
+            : null;
+          const accountNoVal = colIndices.accountNo >= 0 && row[colIndices.accountNo] !== undefined 
+            ? String(row[colIndices.accountNo]).trim() 
+            : null;
+          const swiftCodeVal = colIndices.swiftCode >= 0 && row[colIndices.swiftCode] !== undefined 
+            ? String(row[colIndices.swiftCode]).trim().toUpperCase() 
+            : null;
+
+          parsedRows.push({
+            name: nameVal,
+            bank_type: bankTypeVal,
+            department: departmentVal || null,
+            email: emailVal || null,
+            phone: phoneVal || null,
+            bank_name: bankNameVal || null,
+            account_no: accountNoVal || null,
+            swift_code: swiftCodeVal || null,
+            rowIndex: i + 1
+          });
+        }
+
+        resolve(parsedRows);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error('File reading error'));
+    };
+
+    reader.readAsBinaryString(file);
+  });
+}
+
+/**
+ * Parses an Excel file containing landowner details.
+ */
+export async function parseLandownerImportFile(file: File): Promise<ParsedLandownerRow[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        if (!data) {
+          throw new Error('Could not read file data');
+        }
+
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Convert to array of arrays
+        const jsonRows = XLSX.utils.sheet_to_json<(string | number | null | undefined)[]>(worksheet, { header: 1 });
+        
+        if (jsonRows.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        // Standard headers we look for
+        let headerIndex = 0;
+        const colIndices = {
+          name: -1,
+          bankType: -1,
+          contactPerson: -1,
+          email: -1,
+          phone: -1,
+          bankName: -1,
+          accountNo: -1,
+          swiftCode: -1
+        };
+
+        let foundHeader = false;
+        for (let i = 0; i < Math.min(10, jsonRows.length); i++) {
+          const row = jsonRows[i];
+          if (row && row.some(cell => typeof cell === 'string' && cell.toLowerCase().trim() === 'name')) {
+            headerIndex = i;
+            foundHeader = true;
+            
+            row.forEach((cell, idx) => {
+              if (cell === null || cell === undefined) return;
+              const strVal = String(cell).toLowerCase().trim();
+              if (strVal === 'name' || strVal === 'landowner name' || strVal === 'landownername' || strVal === 'owner name' || strVal === 'owner') colIndices.name = idx;
+              else if (strVal === 'bank type' || strVal === 'banktype') colIndices.bankType = idx;
+              else if (strVal === 'contact person' || strVal === 'contactperson' || strVal === 'contact') colIndices.contactPerson = idx;
+              else if (strVal === 'email' || strVal === 'email address') colIndices.email = idx;
+              else if (strVal === 'phone' || strVal === 'phone number' || strVal === 'mobile') colIndices.phone = idx;
+              else if (strVal === 'bank name' || strVal === 'bankname') colIndices.bankName = idx;
+              else if (strVal === 'account number' || strVal === 'accountno' || strVal === 'account_no' || strVal === 'account') colIndices.accountNo = idx;
+              else if (strVal === 'swift code' || strVal === 'swiftcode' || strVal === 'swift_code') colIndices.swiftCode = idx;
+            });
+            break;
+          }
+        }
+
+        // If we didn't find a header row containing 'name', look at row 0 or assume default order
+        if (!foundHeader) {
+          colIndices.name = 0;
+          colIndices.bankType = 1;
+          colIndices.contactPerson = 2;
+          colIndices.email = 3;
+          colIndices.phone = 4;
+          colIndices.bankName = 5;
+          colIndices.accountNo = 6;
+          colIndices.swiftCode = 7;
+        }
+
+        const startRow = foundHeader ? headerIndex + 1 : 1;
+        const parsedRows: ParsedLandownerRow[] = [];
+
+        for (let i = startRow; i < jsonRows.length; i++) {
+          const row = jsonRows[i];
+          if (!row || row.length === 0) continue;
+          
+          // Skip completely empty rows
+          const hasData = row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+          if (!hasData) continue;
+
+          const nameVal = colIndices.name >= 0 ? String(row[colIndices.name] || '').trim() : '';
+          
+          const rawBankType = colIndices.bankType >= 0 ? String(row[colIndices.bankType] || '').trim().toUpperCase() : 'BANK_MUSCAT';
+          const bankTypeVal: 'BANK_MUSCAT' | 'OTHER_BANK' = (rawBankType === 'OTHER_BANK') 
             ? 'OTHER_BANK' 
             : 'BANK_MUSCAT';
 

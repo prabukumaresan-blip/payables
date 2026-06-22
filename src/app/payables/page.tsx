@@ -7,8 +7,8 @@ import Papa from 'papaparse';
 import AppLayout from '@/components/layout/AppLayout';
 import StatusBadge from '@/components/payables/StatusBadge';
 import PayableForm from '@/components/payables/PayableForm';
-import { getPayables, getCategories, deletePayable, updatePayableStatus, getAllPayables, getVendors, updatePayable } from '@/lib/supabase/queries';
-import { Payable, Category, Vendor } from '@/lib/supabase/mockDb';
+import { getPayables, getCategories, deletePayable, updatePayableStatus, getAllPayables, getVendors, updatePayable, getEmployees, getLandowners } from '@/lib/supabase/queries';
+import { Payable, Category, Vendor, Employee, Landowner } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
 import { 
   Building2, 
@@ -55,6 +55,8 @@ function PayablesContent() {
   const selectedMonth = searchParams.get('month') || format(new Date(), 'yyyy-MM');
   const [categories, setCategories] = useState<Category[]>([]);
   const [vendorsList, setVendorsList] = useState<Vendor[]>([]);
+  const [employeesList, setEmployeesList] = useState<Employee[]>([]);
+  const [landownersList, setLandownersList] = useState<Landowner[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -101,6 +103,8 @@ function PayablesContent() {
     try {
       const cats = await getCategories();
       const vList = await getVendors();
+      const empList = await getEmployees();
+      const landList = await getLandowners();
       const list = await getPayables(selectedMonth, {
         categoryId: categoryIdFilter,
         status: statusFilter,
@@ -108,6 +112,8 @@ function PayablesContent() {
       });
       setCategories(cats);
       setVendorsList(vList);
+      setEmployeesList(empList);
+      setLandownersList(landList);
       setPayables(list);
       setSelectedIds([]); // Clear selection
     } catch (e) {
@@ -167,17 +173,28 @@ function PayablesContent() {
     const selectedPayables = payables.filter(p => selectedIds.includes(p.id));
     return selectedPayables.some(p => {
       const v = vendorsList.find(vendor => vendor.name === p.vendor_name);
-      return v && v.bank_type === 'OTHER_BANK';
+      if (v) return v.bank_type === 'OTHER_BANK';
+      const e = employeesList.find(emp => emp.name === p.vendor_name);
+      if (e) return e.bank_type === 'OTHER_BANK';
+      const l = landownersList.find(land => land.name === p.vendor_name);
+      if (l) return l.bank_type === 'OTHER_BANK';
+      return false;
     });
-  }, [payables, selectedIds, vendorsList]);
+  }, [payables, selectedIds, vendorsList, employeesList, landownersList]);
 
   const isMuscatSelected = React.useMemo(() => {
     const selectedPayables = payables.filter(p => selectedIds.includes(p.id));
     return selectedPayables.some(p => {
       const v = vendorsList.find(vendor => vendor.name === p.vendor_name);
-      return !v || v.bank_type !== 'OTHER_BANK';
+      if (v) return v.bank_type !== 'OTHER_BANK';
+      const e = employeesList.find(emp => emp.name === p.vendor_name);
+      if (e) return e.bank_type !== 'OTHER_BANK';
+      const l = landownersList.find(land => land.name === p.vendor_name);
+      if (l) return l.bank_type !== 'OTHER_BANK';
+      return true;
     });
-  }, [payables, selectedIds, vendorsList]);
+  }, [payables, selectedIds, vendorsList, employeesList, landownersList]);
+
   // Category Icon Renderer
   const renderCategoryIcon = (iconName: string, color: string) => {
     const icons: Record<string, any> = {
@@ -375,6 +392,8 @@ function PayablesContent() {
         const { blob, filename } = generatePaymentExcelFile(
           muscatPayables,
           vendorsList,
+          employeesList,
+          landownersList,
           debitAccount,
           debitName,
           exportRemarks,
@@ -406,6 +425,8 @@ function PayablesContent() {
         const { blob, filename } = generatePaymentExcelFile(
           otherBankPayables,
           vendorsList,
+          employeesList,
+          landownersList,
           debitAccount,
           debitName,
           exportRemarks,

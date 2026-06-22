@@ -39,6 +39,27 @@ CREATE TABLE IF NOT EXISTS employees (
   name TEXT NOT NULL,
   department TEXT,
   email TEXT,
+  phone TEXT,
+  bank_account TEXT,
+  bank_name TEXT,
+  account_no TEXT,
+  swift_code TEXT,
+  bank_type TEXT DEFAULT 'BANK_MUSCAT',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3b. Create Landowners Table
+CREATE TABLE IF NOT EXISTS landowners (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_person TEXT,
+  email TEXT,
+  phone TEXT,
+  bank_account TEXT,
+  bank_name TEXT,
+  account_no TEXT,
+  swift_code TEXT,
+  bank_type TEXT DEFAULT 'BANK_MUSCAT',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -90,3 +111,19 @@ CREATE TABLE IF NOT EXISTS loan_schedule (
   interest NUMERIC(15, 3) NOT NULL,
   balance_after NUMERIC(15, 3) NOT NULL
 );
+
+-- 7. Create Payment History Table
+CREATE TABLE IF NOT EXISTS payment_history (
+  id TEXT PRIMARY KEY,
+  payable_id TEXT NOT NULL REFERENCES payables(id) ON DELETE CASCADE,
+  amount NUMERIC(15, 3) NOT NULL,
+  payment_date TEXT NOT NULL,
+  reference_no TEXT,
+  bank_account TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for payment_history lookup
+CREATE INDEX IF NOT EXISTS idx_payment_history_payable_id ON payment_history(payable_id);
+
