@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from './client';
 
 export const createClient = async () => {
   if (!isSupabaseConfigured()) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return null as any;
   }
   const cookieStore = await cookies();

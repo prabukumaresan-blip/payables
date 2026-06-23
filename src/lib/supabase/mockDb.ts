@@ -16,6 +16,8 @@ export interface Vendor {
   bank_account?: string | null;
   bank_name?: string | null;
   account_no?: string | null;
+  swift_code?: string | null;
+  bank_type?: 'BANK_MUSCAT' | 'OTHER_BANK' | null;
   created_at?: string;
 }
 
@@ -26,10 +28,32 @@ export interface Employee {
   name: string;
   department?: string | null;
   email?: string | null;
+  phone?: string | null;
+  bank_account?: string | null;
+  bank_name?: string | null;
+  account_no?: string | null;
+  swift_code?: string | null;
+  bank_type?: 'BANK_MUSCAT' | 'OTHER_BANK' | null;
   created_at?: string;
 }
 
 export const SEEDED_EMPLOYEES: Employee[] = [];
+
+export interface Landowner {
+  id: string;
+  name: string;
+  contact_person?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  bank_account?: string | null;
+  bank_name?: string | null;
+  account_no?: string | null;
+  swift_code?: string | null;
+  bank_type?: 'BANK_MUSCAT' | 'OTHER_BANK' | null;
+  created_at?: string;
+}
+
+export const SEEDED_LANDOWNERS: Landowner[] = [];
 
 export interface Payable {
   id: string;
@@ -53,6 +77,7 @@ export interface Payable {
   pdc?: PDC | null;
   loan?: LoanSchedule | null;
   category?: Category | null;
+  payments?: PaymentHistory[] | null;
   rent_start_month?: string | null;
   rent_end_month?: string | null;
   rent_repeat_sequence?: 'monthly' | 'weekly' | 'quarterly' | null;
@@ -82,6 +107,17 @@ export interface LoanSchedule {
   balance_after: number;
 }
 
+export interface PaymentHistory {
+  id: string;
+  payable_id: string;
+  amount: number;
+  payment_date: string;
+  reference_no?: string | null;
+  bank_account?: string | null;
+  notes?: string | null;
+  created_at?: string;
+}
+
 // Seeded categories
 export const SEEDED_CATEGORIES: Category[] = [
   { id: 'cat-1', name: 'Vendor Payment', icon: 'Building2', color: 'blue' },
@@ -102,9 +138,11 @@ export const getMockDb = () => {
       categories: SEEDED_CATEGORIES,
       vendors: SEEDED_VENDORS,
       employees: SEEDED_EMPLOYEES,
+      landowners: SEEDED_LANDOWNERS,
       payables: [],
       pdcs: [],
-      loan_schedule: []
+      loan_schedule: [],
+      payment_history: []
     };
   }
 
@@ -160,7 +198,27 @@ export const getMockDb = () => {
     if (p.loan) loan_schedule.push(p.loan);
   });
 
-  return { categories, vendors, employees, payables, pdcs, loan_schedule };
+  // Load payment history
+  let payment_history: PaymentHistory[] = [];
+  const storedHistory = localStorage.getItem(getStorageKey('payment_history'));
+  if (storedHistory) {
+    payment_history = JSON.parse(storedHistory);
+  } else {
+    payment_history = [];
+    localStorage.setItem(getStorageKey('payment_history'), JSON.stringify(payment_history));
+  }
+
+  // Load landowners
+  let landowners: Landowner[] = [];
+  const storedLandowners = localStorage.getItem(getStorageKey('landowners'));
+  if (storedLandowners) {
+    landowners = JSON.parse(storedLandowners);
+  } else {
+    landowners = SEEDED_LANDOWNERS;
+    localStorage.setItem(getStorageKey('landowners'), JSON.stringify(SEEDED_LANDOWNERS));
+  }
+
+  return { categories, vendors, employees, landowners, payables, pdcs, loan_schedule, payment_history };
 };
 
 export const saveMockPayables = (payables: Payable[]) => {
@@ -178,5 +236,17 @@ export const saveMockVendors = (vendors: any[]) => {
 export const saveMockEmployees = (employees: any[]) => {
   if (typeof window !== 'undefined') {
     localStorage.setItem(getStorageKey('employees'), JSON.stringify(employees));
+  }
+};
+
+export const saveMockPaymentHistory = (history: PaymentHistory[]) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(getStorageKey('payment_history'), JSON.stringify(history));
+  }
+};
+
+export const saveMockLandowners = (landowners: any[]) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(getStorageKey('landowners'), JSON.stringify(landowners));
   }
 };

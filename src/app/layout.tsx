@@ -28,6 +28,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-500/10 selection:text-indigo-600">
         {children}
