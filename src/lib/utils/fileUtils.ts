@@ -155,7 +155,6 @@ function calculateMatchScore(row: ParsedPaymentRow, payable: Payable): { score: 
     score += 2;
     reasons.push('Partial payment amount');
   }
-
   // Account match (highest priority)
   const cleanRowAcc = cleanAccount(row.accountNumber);
   const cleanPayableAcc = cleanAccount(payable.bank_account || '');
@@ -389,7 +388,6 @@ export function generatePaymentExcelFile(
       const payableAmount = exportAmounts && exportAmounts[p.id] !== undefined
         ? exportAmounts[p.id]
         : (Number(p.amount) - Number(p.paid_amount || 0));
-
       dataRows.push([
         'CR',
         accNum,
@@ -438,7 +436,6 @@ export function generatePaymentExcelFile(
       const payableAmount = exportAmounts && exportAmounts[p.id] !== undefined
         ? exportAmounts[p.id]
         : (Number(p.amount) - Number(p.paid_amount || 0));
-
       dataRows.push([
         'CR',
         accNum,

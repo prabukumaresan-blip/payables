@@ -421,7 +421,6 @@ function PayablesContent() {
       const parsedCustomAmounts = Object.fromEntries(
         Object.entries(exportAmounts).map(([id, val]) => [id, parseFloat(val) || 0])
       );
-
       // 2. Export Bank Muscat File
       if (muscatPayables.length > 0) {
         const muscatUniqueId = generateUniqueExportId();
