@@ -4,8 +4,8 @@ import React, { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as zod from 'zod';
-import { Payable, Category, PDC, LoanSchedule, Vendor, Employee } from '@/lib/supabase/mockDb';
-import { createPayable, updatePayable, getVendors, createVendor, getEmployees, createEmployee, deleteVendor } from '@/lib/supabase/queries';
+import { Payable, Category, PDC, LoanSchedule, Vendor, Employee, Landowner } from '@/lib/supabase/mockDb';
+import { createPayable, updatePayable, getVendors, createVendor, getEmployees, createEmployee, deleteVendor, getLandowners, createLandowner, deleteLandowner } from '@/lib/supabase/queries';
 import { AlertCircle, HelpCircle, Plus, Check, Trash2, Search } from 'lucide-react';
 
 const formSchema = zod.object({
@@ -101,6 +101,8 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
   const [newVendorBankName, setNewVendorBankName] = React.useState('');
   const [newVendorAccountNo, setNewVendorAccountNo] = React.useState('');
   const [newVendorEmail, setNewVendorEmail] = React.useState('');
+  const [newVendorSwiftCode, setNewVendorSwiftCode] = React.useState('');
+  const [newVendorBankType, setNewVendorBankType] = React.useState<'BANK_MUSCAT' | 'OTHER_BANK'>('BANK_MUSCAT');
 
   // Watch selected vendor
   const selectedVendorName = useWatch({ control, name: 'vendor_name' });
@@ -110,10 +112,26 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
   const [isVendorDropdownOpen, setIsVendorDropdownOpen] = React.useState(false);
   const vendorDropdownRef = React.useRef<HTMLDivElement>(null);
 
+  // Landowners state
+  const [landowners, setLandowners] = React.useState<Landowner[]>([]);
+  const [showAddLandowner, setShowAddLandowner] = React.useState(false);
+  const [newLandownerName, setNewLandownerName] = React.useState('');
+  const [newLandownerBankName, setNewLandownerBankName] = React.useState('');
+  const [newLandownerAccountNo, setNewLandownerAccountNo] = React.useState('');
+  const [newLandownerEmail, setNewLandownerEmail] = React.useState('');
+  const [newLandownerSwiftCode, setNewLandownerSwiftCode] = React.useState('');
+  const [newLandownerBankType, setNewLandownerBankType] = React.useState<'BANK_MUSCAT' | 'OTHER_BANK'>('BANK_MUSCAT');
+  const [landownerSearch, setLandownerSearch] = React.useState('');
+  const [isLandownerDropdownOpen, setIsLandownerDropdownOpen] = React.useState(false);
+  const landownerDropdownRef = React.useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (vendorDropdownRef.current && !vendorDropdownRef.current.contains(event.target as Node)) {
         setIsVendorDropdownOpen(false);
+      }
+      if (landownerDropdownRef.current && !landownerDropdownRef.current.contains(event.target as Node)) {
+        setIsLandownerDropdownOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -147,15 +165,36 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
     loadEmployees();
   }, []);
 
-  // Auto-populate bank account when vendor changes
+  // Fetch landowners on mount
+  useEffect(() => {
+    async function loadLandowners() {
+      const list = await getLandowners();
+      setLandowners(list);
+    }
+    loadLandowners();
+  }, []);
+
+  // Auto-populate bank account when vendor/employee/landowner changes
   useEffect(() => {
     if (selectedVendorName) {
-      const found = vendors.find(v => v.name === selectedVendorName);
-      if (found && found.bank_account) {
-        setValue('bank_account', found.bank_account);
+      if (selectedCategory?.name === 'Petty Cash') {
+        const found = employees.find(e => e.name === selectedVendorName);
+        if (found) {
+          setValue('bank_account', found.bank_account || found.account_no || '');
+        }
+      } else if (selectedCategory?.name === 'Rent') {
+        const found = landowners.find(l => l.name === selectedVendorName);
+        if (found) {
+          setValue('bank_account', found.bank_account || found.account_no || '');
+        }
+      } else {
+        const found = vendors.find(v => v.name === selectedVendorName);
+        if (found) {
+          setValue('bank_account', found.bank_account || found.account_no || '');
+        }
       }
     }
-  }, [selectedVendorName, vendors, setValue]);
+  }, [selectedVendorName, selectedCategory, vendors, employees, landowners, setValue]);
 
   // If editing, populate form defaults
   useEffect(() => {
@@ -323,12 +362,12 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
       </div>
 
       {/* Row: Vendor Name & Due Date (Conditioned for non-Rent) */}
-      <div className={showAddVendor || showAddEmployee ? "grid grid-cols-1 gap-4" : "grid grid-cols-2 gap-4"}>
+      <div className={showAddVendor || showAddEmployee || showAddLandowner ? "grid grid-cols-1 gap-4" : "grid grid-cols-2 gap-4"}>
         {/* Vendor / Employee */}
         <div className="space-y-1.5 relative">
           <div className="flex justify-between items-center">
             <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              {selectedCategory?.name === 'Petty Cash' ? 'Employee Name' : selectedCategory?.name === 'Tax' ? 'TAX Name' : selectedCategory?.name === 'Loan' ? 'Loan Name' : 'Vendor / Payee'}
+              {selectedCategory?.name === 'Petty Cash' ? 'Employee Name' : selectedCategory?.name === 'Rent' ? 'Landowner Name' : selectedCategory?.name === 'Tax' ? 'TAX Name' : selectedCategory?.name === 'Loan' ? 'Loan Name' : 'Vendor / Payee'}
             </label>
             {selectedCategory?.name === 'Petty Cash' ? (
               <button
@@ -338,6 +377,15 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
               >
                 <Plus className="h-3 w-3" />
                 {showAddEmployee ? 'Select Existing' : 'New Employee'}
+              </button>
+            ) : selectedCategory?.name === 'Rent' ? (
+              <button
+                type="button"
+                onClick={() => setShowAddLandowner(!showAddLandowner)}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 flex items-center gap-0.5"
+              >
+                <Plus className="h-3 w-3" />
+                {showAddLandowner ? 'Select Existing' : 'New Landowner'}
               </button>
             ) : (selectedCategory?.name === 'Tax' || selectedCategory?.name === 'Loan') ? null : (
               <button
@@ -407,7 +455,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
             ) : (
               <select
                 {...register('vendor_name')}
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-850 outline-none focus:border-indigo-500"
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-855 outline-none focus:border-indigo-500"
               >
                 <option value="">Select Employee</option>
                 {employees.map((emp) => (
@@ -416,6 +464,177 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                   </option>
                 ))}
               </select>
+            )
+          ) : selectedCategory?.name === 'Rent' ? (
+            showAddLandowner ? (
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/30 p-3 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Landowner Name *"
+                    value={newLandownerName}
+                    onChange={(e) => setNewLandownerName(e.target.value)}
+                    className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email Address"
+                    value={newLandownerEmail}
+                    onChange={(e) => setNewLandownerEmail(e.target.value)}
+                    className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Bank Name"
+                    value={newLandownerBankName}
+                    onChange={(e) => setNewLandownerBankName(e.target.value)}
+                    className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Account No"
+                    value={newLandownerAccountNo}
+                    onChange={(e) => setNewLandownerAccountNo(e.target.value)}
+                    className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                  <select
+                    value={newLandownerBankType}
+                    onChange={(e) => setNewLandownerBankType(e.target.value as 'BANK_MUSCAT' | 'OTHER_BANK')}
+                    className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                  >
+                    <option value="BANK_MUSCAT">BANK MUSCAT</option>
+                    <option value="OTHER_BANK">OTHER BANK</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="SWIFT Code"
+                    value={newLandownerSwiftCode}
+                    onChange={(e) => setNewLandownerSwiftCode(e.target.value)}
+                    className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!newLandownerName.trim()) return;
+                    try {
+                      const bName = newLandownerBankName.trim();
+                      const accNo = newLandownerAccountNo.trim();
+                      const swiftCode = newLandownerSwiftCode.trim();
+                      let combinedBankAcc = null;
+                      if (bName && accNo) {
+                        combinedBankAcc = `${bName} - ${accNo}`;
+                      } else {
+                        combinedBankAcc = bName || accNo || null;
+                      }
+
+                      const created = await createLandowner({
+                        name: newLandownerName.trim(),
+                        bank_name: bName || null,
+                        account_no: accNo || null,
+                        swift_code: swiftCode || null,
+                        bank_type: newLandownerBankType,
+                        bank_account: combinedBankAcc,
+                        email: newLandownerEmail.trim() || null
+                      });
+                      setLandowners(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+                      setValue('vendor_name', created.name);
+                      if (created.bank_account) {
+                        setValue('bank_account', created.bank_account);
+                      }
+                      setShowAddLandowner(false);
+                      setNewLandownerName('');
+                      setNewLandownerBankName('');
+                      setNewLandownerAccountNo('');
+                      setNewLandownerEmail('');
+                      setNewLandownerSwiftCode('');
+                      setNewLandownerBankType('BANK_MUSCAT');
+                    } catch (err) {
+                      console.error('Error creating landowner:', err);
+                    }
+                  }}
+                  className="w-full rounded bg-indigo-600 py-1.5 px-3 text-xs font-bold uppercase tracking-wider text-white hover:bg-indigo-500 flex items-center justify-center gap-1"
+                >
+                  <Check className="h-3 w-3" /> Save & Select Landowner
+                </button>
+              </div>
+            ) : (
+              <div className="relative" ref={landownerDropdownRef}>
+                <div 
+                  onClick={() => setIsLandownerDropdownOpen(!isLandownerDropdownOpen)}
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-850 outline-none focus:border-indigo-500 cursor-pointer flex justify-between items-center"
+                >
+                  <span className={selectedVendorName ? "text-slate-850 font-medium" : "text-slate-400"}>
+                    {selectedVendorName || "Select Landowner"}
+                  </span>
+                  <span className="text-slate-400 text-xs">▼</span>
+                </div>
+                
+                {isLandownerDropdownOpen && (
+                  <div className="absolute left-0 right-0 z-50 mt-1 rounded-xl border border-slate-200 bg-white p-2 shadow-xl space-y-2 max-h-[260px] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <div className="relative shrink-0">
+                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search landowner..."
+                        value={landownerSearch}
+                        onChange={(e) => setLandownerSearch(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto divide-y divide-slate-50 min-h-[50px]">
+                      {landowners.filter(l => l.name.toLowerCase().includes(landownerSearch.toLowerCase())).length === 0 ? (
+                        <div className="py-4 text-center text-xs text-slate-400">No landowners found</div>
+                      ) : (
+                        landowners
+                          .filter(l => l.name.toLowerCase().includes(landownerSearch.toLowerCase()))
+                          .map((l) => (
+                            <div 
+                              key={l.id}
+                              onClick={() => {
+                                setValue('vendor_name', l.name);
+                                setIsLandownerDropdownOpen(false);
+                                setLandownerSearch('');
+                              }}
+                              className="flex items-center justify-between py-2 px-2.5 text-xs text-slate-700 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors"
+                            >
+                              <span className="font-semibold">{l.name}</span>
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Are you sure you want to delete landowner "${l.name}"?`)) {
+                                    try {
+                                      await deleteLandowner(l.id);
+                                      const list = await getLandowners();
+                                      setLandowners(list);
+                                      if (selectedVendorName === l.name) {
+                                        setValue('vendor_name', '');
+                                      }
+                                    } catch (err) {
+                                      console.error('Error deleting landowner:', err);
+                                    }
+                                  }
+                                }}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 transition-colors"
+                                title="Delete Landowner"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
+                )}
+                <input type="hidden" {...register('vendor_name')} />
+              </div>
             )
           ) : (selectedCategory?.name === 'Tax' || selectedCategory?.name === 'Loan') ? (
             <input
@@ -426,7 +645,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
             />
           ) : showAddVendor ? (
             <div className="rounded-lg border border-indigo-100 bg-indigo-50/30 p-3 space-y-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <input
                   type="text"
                   placeholder="New Vendor Name *"
@@ -441,11 +660,19 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                   onChange={(e) => setNewVendorEmail(e.target.value)}
                   className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
                 />
+                <select
+                  value={newVendorBankType}
+                  onChange={(e) => setNewVendorBankType(e.target.value as 'BANK_MUSCAT' | 'OTHER_BANK')}
+                  className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                >
+                  <option value="BANK_MUSCAT">BANK MUSCAT</option>
+                  <option value="OTHER_BANK">OTHER BANK</option>
+                </select>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <input
                   type="text"
-                  placeholder="Bank Name (e.g. Bank Muscat)"
+                  placeholder="Bank Name"
                   value={newVendorBankName}
                   onChange={(e) => setNewVendorBankName(e.target.value)}
                   className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
@@ -457,6 +684,13 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                   onChange={(e) => setNewVendorAccountNo(e.target.value)}
                   className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
                 />
+                <input
+                  type="text"
+                  placeholder="SWIFT Code"
+                  value={newVendorSwiftCode}
+                  onChange={(e) => setNewVendorSwiftCode(e.target.value)}
+                  className="w-full rounded border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                />
               </div>
               <button
                 type="button"
@@ -465,6 +699,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                   try {
                     const bName = newVendorBankName.trim();
                     const accNo = newVendorAccountNo.trim();
+                    const swiftCode = newVendorSwiftCode.trim();
                     let combinedBankAcc = null;
                     if (bName && accNo) {
                       combinedBankAcc = `${bName} - ${accNo}`;
@@ -476,6 +711,8 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                       name: newVendorName.trim(),
                       bank_name: bName || null,
                       account_no: accNo || null,
+                      swift_code: swiftCode || null,
+                      bank_type: newVendorBankType,
                       bank_account: combinedBankAcc,
                       email: newVendorEmail.trim() || null
                     });
@@ -489,6 +726,8 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
                     setNewVendorBankName('');
                     setNewVendorAccountNo('');
                     setNewVendorEmail('');
+                    setNewVendorSwiftCode('');
+                    setNewVendorBankType('BANK_MUSCAT');
                   } catch (err) {
                     console.error('Error creating vendor:', err);
                   }
