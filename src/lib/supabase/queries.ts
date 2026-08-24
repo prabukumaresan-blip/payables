@@ -125,12 +125,12 @@ export async function createPayable(
   if (payableData.category_id === 'cat-4') {
     const pdcStartDateStr = payableData.pdc_start_date || payableData.due_date;
     const count = payableData.pdc_no_of_cheques || 1;
-    
+
     let baseDate = new Date(pdcStartDateStr);
     if (isNaN(baseDate.getTime())) {
       baseDate = new Date();
     }
-    
+
     const dates: Date[] = [];
     let currentDate = baseDate;
     for (let i = 0; i < count; i++) {
@@ -142,7 +142,7 @@ export async function createPayable(
       const loopId = i === 0 ? newId : (typeof crypto !== 'undefined' ? crypto.randomUUID() : 'p-' + Math.random().toString(36).substr(2, 9));
       const loopMonthYear = format(date, 'yyyy-MM');
       const loopDueDateStr = format(date, 'yyyy-MM-dd');
-      
+
       // Calculate incremented cheque number if it has numeric parts
       let chequeNo = payableData.pdc?.cheque_no || '';
       if (chequeNo && i > 0) {
@@ -214,7 +214,7 @@ export async function createPayable(
       const loopId = i === 0 ? newId : (typeof crypto !== 'undefined' ? crypto.randomUUID() : 'p-' + Math.random().toString(36).substr(2, 9));
       const loopMonthYear = format(date, 'yyyy-MM');
       const loopDueDateStr = format(date, 'yyyy-MM-dd');
-      
+
       // Append month-year description to title if there are multiple occurrences
       const finalTitle = dates.length > 1 ? `${payableData.title} - ${format(date, 'MMMM yyyy')}` : payableData.title;
 
@@ -236,7 +236,7 @@ export async function createPayable(
     // Standard non-rent recurring logic
     const recurrence = payableData.recurrence || 'once';
     const baseDueDate = new Date(payableData.due_date);
-    
+
     let iterations = 1;
     let monthsInterval = 1;
 
@@ -298,10 +298,10 @@ export async function createPayable(
 
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
-    
+
     // Extract base payables mapping (omit relations: pdc, loan, category)
     const dbPayables = payablesToCreate.map(({ pdc, loan, category: _category, ...rest }) => rest);
-    
+
     const { error: payablesError } = await supabase.from('payables').insert(dbPayables);
     if (payablesError) {
       console.error('Error inserting payables into Supabase:', {
@@ -317,7 +317,7 @@ export async function createPayable(
     const pdcsToCreate = payablesToCreate
       .filter((p) => p.pdc)
       .map((p) => p.pdc!);
-    
+
     if (pdcsToCreate.length > 0) {
       const { error: pdcsError } = await supabase.from('pdcs').insert(pdcsToCreate);
       if (pdcsError) {
@@ -330,7 +330,7 @@ export async function createPayable(
     const loansToCreate = payablesToCreate
       .filter((p) => p.loan)
       .map((p) => p.loan!);
-    
+
     if (loansToCreate.length > 0) {
       const { error: loansError } = await supabase.from('loan_schedule').insert(loansToCreate);
       if (loansError) {
@@ -431,10 +431,10 @@ export async function updatePayable(
 
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
-    
+
     // Extract base payable fields (excluding relations: pdc, loan, category)
     const { pdc: pdcUpdate, loan: loanUpdate, category: _category, ...payableFields } = fieldsToUpdate;
-    
+
     if (Object.keys(payableFields).length > 0) {
       const { error: payableError } = await supabase
         .from('payables')
@@ -513,7 +513,7 @@ export async function deletePayable(id: string, deleteAllOccurrences: boolean = 
         const targetTime = new Date(target.created_at).getTime();
         const startTime = new Date(targetTime - 2000).toISOString();
         const endTime = new Date(targetTime + 2000).toISOString();
-        
+
         const { error: err1 } = await supabase
           .from('payables')
           .delete()
@@ -523,7 +523,7 @@ export async function deletePayable(id: string, deleteAllOccurrences: boolean = 
           console.error('Error deleting multi-occurrence payables from Supabase by timestamp:', err1);
         }
       }
-      
+
       // 2. Fallback/Complementary delete by base title pattern, category, and vendor
       const titlePattern = `${baseTargetTitle}%`;
       const query = supabase
@@ -531,7 +531,7 @@ export async function deletePayable(id: string, deleteAllOccurrences: boolean = 
         .delete()
         .eq('category_id', target.category_id)
         .ilike('title', titlePattern);
-        
+
       let error;
       if (target.vendor_name) {
         const res = await query.eq('vendor_name', target.vendor_name);
@@ -563,17 +563,17 @@ export async function deletePayable(id: string, deleteAllOccurrences: boolean = 
         const timeDiff = Math.abs(new Date(p.created_at).getTime() - targetTime);
         if (timeDiff <= 2000) return false; // Delete
       }
-      
+
       // Fallback: match by base title, category, and vendor
       const basePTitle = p.title.split(' - ')[0].trim();
       const titlesMatch = basePTitle === baseTargetTitle;
       const categoriesMatch = p.category_id === target.category_id;
       const vendorsMatch = (p.vendor_name || '') === (target.vendor_name || '');
-      
+
       if (titlesMatch && categoriesMatch && vendorsMatch) {
         return false; // Delete
       }
-      
+
       return true; // Keep
     });
   } else {
@@ -606,16 +606,16 @@ export async function getPdcs(filters: { status?: string } = {}): Promise<Payabl
     const { data, error } = await supabase
       .from('payables')
       .select('*, category:categories(*), pdc:pdcs(*)');
-      
+
     if (!error && data) {
       // Filter in JS to find payables with PDC
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let results = (data as any[]).filter(p => p.category_id === 'cat-4' || p.pdc);
-      
+
       if (filters.status && filters.status !== 'all') {
         results = results.filter(p => p.pdc?.status === filters.status);
       }
-      
+
       return results as Payable[];
     }
   }
@@ -646,8 +646,8 @@ export async function updatePdcStatus(
   const updatedPdc: PDC = {
     ...payable.pdc,
     status,
-    presented_date: (status === 'presented' || status === 'cleared') 
-      ? (presentedDate || format(new Date(), 'yyyy-MM-dd')) 
+    presented_date: (status === 'presented' || status === 'cleared')
+      ? (presentedDate || format(new Date(), 'yyyy-MM-dd'))
       : null
   };
 
@@ -678,7 +678,7 @@ export async function getReports(startMonth: string, endMonth: string): Promise<
   }
 
   const db = getMockDb();
-  
+
   // Filter payables that fall within month range inclusive or previous unpaid items
   const results = db.payables.filter((p) => {
     const inRange = p.month_year >= startMonth && p.month_year <= endMonth;
@@ -727,7 +727,7 @@ export async function createVendor(vendorData: Omit<Vendor, 'id'>): Promise<Vend
     id: newId,
     created_at: new Date().toISOString()
   };
-  
+
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
     const { error } = await supabase.from('vendors').insert(newVendor);
@@ -736,7 +736,7 @@ export async function createVendor(vendorData: Omit<Vendor, 'id'>): Promise<Vend
       throw error;
     }
   }
-  
+
   const db = getMockDb();
   const updatedList = [...db.vendors, newVendor];
   saveMockVendors(updatedList);
@@ -746,7 +746,7 @@ export async function createVendor(vendorData: Omit<Vendor, 'id'>): Promise<Vend
 export async function updateVendor(id: string, vendorData: Partial<Omit<Vendor, 'id' | 'created_at'>>): Promise<Vendor> {
   const db = getMockDb();
   const index = db.vendors.findIndex(v => v.id === id);
-  
+
   let original: Vendor = { id, name: '' };
   if (index !== -1) {
     original = db.vendors[index];
@@ -787,7 +787,7 @@ export async function deleteVendor(id: string): Promise<boolean> {
       throw error;
     }
   }
-  
+
   const db = getMockDb();
   const countBefore = db.vendors.length;
   const filtered = db.vendors.filter(v => v.id !== id);
@@ -811,12 +811,12 @@ export async function createEmployee(employeeData: Omit<Employee, 'id'>): Promis
     id: newId,
     created_at: new Date().toISOString()
   };
-  
+
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
     await supabase.from('employees').insert(newEmployee);
   }
-  
+
   const db = getMockDb();
   const updatedList = [...db.employees, newEmployee];
   saveMockEmployees(updatedList);
@@ -829,7 +829,7 @@ export async function updateEmployee(
 ): Promise<Employee> {
   const db = getMockDb();
   const index = db.employees.findIndex(e => e.id === id);
-  
+
   let original: Employee = { id, name: '' };
   if (index !== -1) {
     original = db.employees[index];
@@ -870,7 +870,7 @@ export async function deleteEmployee(id: string): Promise<boolean> {
       throw error;
     }
   }
-  
+
   const db = getMockDb();
   const countBefore = db.employees.length;
   const filtered = db.employees.filter(e => e.id !== id);
@@ -896,7 +896,7 @@ export async function createLandowner(landownerData: Omit<Landowner, 'id'>): Pro
     id: newId,
     created_at: new Date().toISOString()
   };
-  
+
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
     const { error } = await supabase.from('landowners').insert(newLandowner);
@@ -905,7 +905,7 @@ export async function createLandowner(landownerData: Omit<Landowner, 'id'>): Pro
       throw error;
     }
   }
-  
+
   const db = getMockDb();
   const updatedList = [...db.landowners, newLandowner];
   saveMockLandowners(updatedList);
@@ -918,7 +918,7 @@ export async function updateLandowner(
 ): Promise<Landowner> {
   const db = getMockDb();
   const index = db.landowners.findIndex(l => l.id === id);
-  
+
   let original: Landowner = { id, name: '' };
   if (index !== -1) {
     original = db.landowners[index];
@@ -959,7 +959,7 @@ export async function deleteLandowner(id: string): Promise<boolean> {
       throw error;
     }
   }
-  
+
   const db = getMockDb();
   const countBefore = db.landowners.length;
   const filtered = db.landowners.filter(l => l.id !== id);

@@ -43,6 +43,7 @@ import {
   ParsedPaymentRow,
   MatchedPaymentResult
 } from '@/lib/utils/fileUtils';
+import PaymentApprovalModal, { PaymentApprovalData, ApprovalPaymentItem } from '@/components/payables/PaymentApprovalModal';
 import { cn } from '@/lib/utils';
 
 import { Suspense } from 'react';
@@ -68,6 +69,10 @@ function PayablesContent() {
   const [selectedMatchIndices, setSelectedMatchIndices] = useState<number[]>([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+
+  // Approval Modal States
+  const [isApprovalOpen, setIsApprovalOpen] = useState(false);
+  const [approvalData, setApprovalData] = useState<PaymentApprovalData | null>(null);
 
   // Export fields
   const [debitAccount, setDebitAccount] = useState('0371024323360013');
@@ -421,6 +426,7 @@ function PayablesContent() {
       const parsedCustomAmounts = Object.fromEntries(
         Object.entries(exportAmounts).map(([id, val]) => [id, parseFloat(val) || 0])
       );
+
       // 2. Export Bank Muscat File
       if (muscatPayables.length > 0) {
         const muscatUniqueId = generateUniqueExportId();
@@ -499,9 +505,60 @@ function PayablesContent() {
         }
       }
 
+      // 4. Prepare Approval Request Data
+      const approvalItems: ApprovalPaymentItem[] = selectedPayables.map(payable => {
+        const remaining = Number(payable.amount) - Number(payable.paid_amount || 0);
+        const exportAmt = parsedCustomAmounts[payable.id] !== undefined ? parsedCustomAmounts[payable.id] : remaining;
+        const rowRemark = (individualRemarks[payable.id] || '').trim() || exportRemarks;
+        
+        const vendorObj = vendorsList.find(v => v.name === payable.vendor_name);
+        const employeeObj = employeesList.find(e => e.name === payable.vendor_name);
+        const landownerObj = landownersList.find(l => l.name === payable.vendor_name);
+        
+        let accNum = payable.bank_account || '';
+        let bankCode = '';
+
+        if (vendorObj) {
+          if (vendorObj.account_no) accNum = vendorObj.account_no;
+          if (vendorObj.swift_code) bankCode = vendorObj.swift_code;
+        } else if (employeeObj) {
+          if (employeeObj.account_no) accNum = employeeObj.account_no;
+          if (employeeObj.swift_code) bankCode = employeeObj.swift_code;
+        } else if (landownerObj) {
+          if (landownerObj.account_no) accNum = landownerObj.account_no;
+          if (landownerObj.swift_code) bankCode = landownerObj.swift_code;
+        }
+
+        const categoryObj = categories.find(c => c.id === payable.category_id);
+
+        return {
+          id: payable.id,
+          title: payable.title,
+          vendorName: payable.vendor_name || payable.title,
+          bankAccount: accNum,
+          bankCode: bankCode || undefined,
+          amount: exportAmt,
+          remarks: rowRemark,
+          categoryName: categoryObj?.name
+        };
+      });
+
+      const totalBatchAmount = approvalItems.reduce((sum, item) => sum + item.amount, 0);
+      const batchRef = `BATCH-${format(new Date(), 'yyyyMMdd')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      setApprovalData({
+        batchId: batchRef,
+        exportDate: format(new Date(), 'dd MMMM yyyy'),
+        debitAccount: debitAccount.trim(),
+        debitName: debitName.trim(),
+        items: approvalItems,
+        totalAmount: totalBatchAmount
+      });
+
       await loadData();
       setIsExportOpen(false);
       setSelectedIds([]); // Clear selection
+      setIsApprovalOpen(true); // Open payment approval request modal
     } catch (err) {
       console.error("Error exporting payment file:", err);
     } finally {
@@ -1319,6 +1376,13 @@ function PayablesContent() {
             </div>
           </div>
         )}
+
+        {/* Payment Request for Approval Modal */}
+        <PaymentApprovalModal
+          isOpen={isApprovalOpen}
+          onClose={() => setIsApprovalOpen(false)}
+          data={approvalData}
+        />
       </div>
     </AppLayout>
   );
