@@ -176,18 +176,39 @@ export async function POST(req: NextRequest) {
           return item;
         });
 
-      // B. Identify any previously imported Zoho payables that are NO LONGER in unpaid bills (i.e. Paid in Zoho)
+      // Map of Zoho vendors with 0 outstanding balance
+      const zeroBalanceZohoVendors = new Set<string>();
+      zohoVendors.forEach(v => {
+        if (v.outstanding_payable_amount <= 0 && v.contact_name) {
+          zeroBalanceZohoVendors.add(v.contact_name.trim().toLowerCase());
+        }
+      });
+
+      // B. Identify any payables that are settled in Zoho:
+      // 1) Previously imported Zoho payables not in unpaid bills
+      // 2) Any pending payables for vendors confirmed by Zoho to have 0 outstanding balance
       const settledZohoPayables = existingPayablesList
         .filter((p: any) => {
+          if (p.status === 'paid') return false;
+
           const zohoMatch = p.notes?.match(/\[ZOHO_BILL:([a-zA-Z0-9_-]+)\]/);
           const zohoBillId = p.zoho_bill_id || (zohoMatch ? zohoMatch[1] : null);
-          return zohoBillId && !unpaidZohoBillsMap.has(zohoBillId) && p.status !== 'paid';
+          if (zohoBillId && !unpaidZohoBillsMap.has(zohoBillId)) {
+            return true;
+          }
+
+          const vName = (p.vendor_name || '').trim().toLowerCase();
+          if (vName && zeroBalanceZohoVendors.has(vName)) {
+            return true;
+          }
+
+          return false;
         })
         .map((p: any) => ({
           ...p,
           status: 'paid',
-          paid_amount: p.amount,
-          payment_date: p.payment_date || now.substring(0, 10),
+          paid_amount: Number(p.amount) || 0,
+          payment_date: p.payment_date || p.due_date || now.substring(0, 10),
           updated_at: now
         }));
 
