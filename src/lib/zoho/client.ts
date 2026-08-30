@@ -45,14 +45,43 @@ export interface ZohoBill {
 let cachedAccessToken: string | null = null;
 let tokenExpiresAt: number = 0;
 
+function readEnvFileFallback(): Record<string, string> {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const envPath = path.resolve(process.cwd(), '.env.local');
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf8');
+      const envVars: Record<string, string> = {};
+      content.split('\n').forEach((line: string) => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const match = trimmed.match(/^([^=]+)=(.*)$/);
+          if (match) {
+            const key = match[1].trim();
+            const val = match[2].trim().replace(/^['"]|['"]$/g, '');
+            envVars[key] = val;
+          }
+        }
+      });
+      return envVars;
+    }
+  } catch (e) {
+    // Ignore errors in environments where fs is restricted
+  }
+  return {};
+}
+
 export function getZohoConfig() {
+  const fallback = !process.env.ZOHO_CLIENT_ID ? readEnvFileFallback() : {};
+
   return {
-    clientId: process.env.ZOHO_CLIENT_ID || '',
-    clientSecret: process.env.ZOHO_CLIENT_SECRET || '',
-    refreshToken: process.env.ZOHO_REFRESH_TOKEN || '',
-    organizationId: process.env.ZOHO_ORGANIZATION_ID || '771750431',
-    accountsUrl: process.env.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.com',
-    apiUrl: process.env.ZOHO_API_URL || 'https://www.zohoapis.com/books/v3'
+    clientId: process.env.ZOHO_CLIENT_ID || fallback.ZOHO_CLIENT_ID || '',
+    clientSecret: process.env.ZOHO_CLIENT_SECRET || fallback.ZOHO_CLIENT_SECRET || '',
+    refreshToken: process.env.ZOHO_REFRESH_TOKEN || fallback.ZOHO_REFRESH_TOKEN || '',
+    organizationId: process.env.ZOHO_ORGANIZATION_ID || fallback.ZOHO_ORGANIZATION_ID || '771750431',
+    accountsUrl: process.env.ZOHO_ACCOUNTS_URL || fallback.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.com',
+    apiUrl: process.env.ZOHO_API_URL || fallback.ZOHO_API_URL || 'https://www.zohoapis.com/books/v3'
   };
 }
 
