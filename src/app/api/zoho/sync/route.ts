@@ -148,7 +148,8 @@ export async function POST(req: NextRequest) {
             (p.reference_no && p.reference_no.trim() === bill.bill_number.trim() && p.vendor_name?.toLowerCase().trim() === bill.vendor_name.toLowerCase().trim())
           );
 
-          const notesTag = `[ZOHO_BILL:${bill.bill_id}] ${bill.notes || `Imported from Zoho Books Bill #${bill.bill_number}`}`;
+          const currencyNote = bill.currency_code !== 'OMR' ? `(Converted from ${bill.currency_code} ${bill.raw_total} @ rate ${bill.exchange_rate}) ` : '';
+          const notesTag = `[ZOHO_BILL:${bill.bill_id}] ${currencyNote}${bill.notes || `Imported from Zoho Books Bill #${bill.bill_number}`}`;
           const isOverdue = new Date(dueDateStr) < new Date();
           const isPartial = bill.balance < bill.total && bill.balance > 0;
           const status = isPartial ? 'partial' : (isOverdue ? 'overdue' : 'pending');
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
             category_id: match?.category_id || 'cat-1', // Vendor Payment
             vendor_name: bill.vendor_name,
             amount: bill.total || bill.balance,
-            currency: bill.currency_code || 'OMR',
+            currency: 'OMR',
             due_date: dueDateStr,
             month_year: monthYear,
             status: status,

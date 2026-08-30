@@ -270,10 +270,18 @@ function VendorsContent() {
     if (!matchingVendor) return;
     setSavingMatch(true);
     try {
+      const outstandingOMR = zohoContact.outstanding_payable_amount_bcy !== undefined && zohoContact.outstanding_payable_amount_bcy !== null
+        ? Number(zohoContact.outstanding_payable_amount_bcy)
+        : Number(zohoContact.outstanding_payable_amount || zohoContact.balance || 0);
+
+      const unusedCreditsOMR = zohoContact.unused_credits_payable_amount_bcy !== undefined && zohoContact.unused_credits_payable_amount_bcy !== null
+        ? Number(zohoContact.unused_credits_payable_amount_bcy)
+        : Number(zohoContact.unused_credits_payable_amount || zohoContact.unused_credits || 0);
+
       const updateData = {
         zoho_contact_id: zohoContact.contact_id || zohoContact.zoho_contact_id,
-        outstanding_payable_amount: Number(zohoContact.outstanding_payable_amount || zohoContact.balance || 0),
-        unused_credits_payable_amount: Number(zohoContact.unused_credits_payable_amount || zohoContact.unused_credits || 0),
+        outstanding_payable_amount: Number(outstandingOMR.toFixed(3)),
+        unused_credits_payable_amount: Number(unusedCreditsOMR.toFixed(3)),
         zoho_last_synced_at: new Date().toISOString()
       };
 

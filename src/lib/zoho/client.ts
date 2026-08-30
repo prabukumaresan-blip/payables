@@ -18,8 +18,11 @@ export interface ZohoVendor {
   contact_type: string; // 'vendor'
   email?: string;
   phone?: string;
-  outstanding_payable_amount: number;
-  unused_credits_payable_amount: number;
+  currency_code?: string;
+  outstanding_payable_amount: number; // In OMR (Base Currency)
+  unused_credits_payable_amount: number; // In OMR (Base Currency)
+  raw_outstanding_payable_amount?: number; // In Original Currency
+  raw_unused_credits_payable_amount?: number; // In Original Currency
   bank_name?: string;
   bank_account_number?: string;
   swift_code?: string;
@@ -34,8 +37,11 @@ export interface ZohoBill {
   date: string;
   due_date: string;
   status: 'paid' | 'open' | 'overdue' | 'partially_paid' | 'void';
-  total: number;
-  balance: number;
+  total: number; // In OMR (Base Currency)
+  balance: number; // In OMR (Base Currency)
+  raw_total?: number; // In Original Currency
+  raw_balance?: number; // In Original Currency
+  exchange_rate?: number;
   currency_code: string;
   reference_number?: string;
   notes?: string;
@@ -185,7 +191,7 @@ export async function zohoRequest<T>(
 }
 
 /**
- * Fetch all Vendors from Zoho Books with their outstanding payable balances
+ * Fetch all Vendors from Zoho Books with their outstanding payable balances converted to OMR
  */
 export async function fetchZohoVendors(): Promise<ZohoVendor[]> {
   let allVendors: ZohoVendor[] = [];
@@ -201,20 +207,34 @@ export async function fetchZohoVendors(): Promise<ZohoVendor[]> {
     }>(`/contacts?contact_type=vendor&status=all&page=${page}&per_page=200`);
 
     if (res.contacts && res.contacts.length > 0) {
-      const mapped: ZohoVendor[] = res.contacts.map((c) => ({
-        contact_id: c.contact_id,
-        contact_name: c.contact_name,
-        company_name: c.company_name || c.contact_name,
-        contact_type: c.contact_type,
-        email: c.email || '',
-        phone: c.phone || c.mobile || '',
-        outstanding_payable_amount: Number(c.outstanding_payable_amount || 0),
-        unused_credits_payable_amount: Number(c.unused_credits_payable_amount || 0),
-        bank_name: c.bank_name || '',
-        bank_account_number: c.bank_account_number || '',
-        swift_code: c.swift_code || '',
-        status: c.status
-      }));
+      const mapped: ZohoVendor[] = res.contacts.map((c) => {
+        // Base currency (OMR) values from Zoho
+        const outstandingOMR = c.outstanding_payable_amount_bcy !== undefined && c.outstanding_payable_amount_bcy !== null
+          ? Number(c.outstanding_payable_amount_bcy)
+          : Number(c.outstanding_payable_amount || 0);
+
+        const unusedCreditsOMR = c.unused_credits_payable_amount_bcy !== undefined && c.unused_credits_payable_amount_bcy !== null
+          ? Number(c.unused_credits_payable_amount_bcy)
+          : Number(c.unused_credits_payable_amount || 0);
+
+        return {
+          contact_id: c.contact_id,
+          contact_name: c.contact_name,
+          company_name: c.company_name || c.contact_name,
+          contact_type: c.contact_type,
+          email: c.email || '',
+          phone: c.phone || c.mobile || '',
+          currency_code: c.currency_code || 'OMR',
+          outstanding_payable_amount: Number(outstandingOMR.toFixed(3)),
+          unused_credits_payable_amount: Number(unusedCreditsOMR.toFixed(3)),
+          raw_outstanding_payable_amount: Number(c.outstanding_payable_amount || 0),
+          raw_unused_credits_payable_amount: Number(c.unused_credits_payable_amount || 0),
+          bank_name: c.bank_name || '',
+          bank_account_number: c.bank_account_number || '',
+          swift_code: c.swift_code || '',
+          status: c.status
+        };
+      });
 
       allVendors.push(...mapped);
     }
@@ -230,7 +250,7 @@ export async function fetchZohoVendors(): Promise<ZohoVendor[]> {
 }
 
 /**
- * Fetch all unpaid or partially paid Bills from Zoho Books
+ * Fetch all unpaid or partially paid Bills from Zoho Books converted to OMR
  */
 export async function fetchZohoUnpaidBills(): Promise<ZohoBill[]> {
   let allBills: ZohoBill[] = [];
@@ -247,20 +267,34 @@ export async function fetchZohoUnpaidBills(): Promise<ZohoBill[]> {
     }>(`/bills?status=unpaid&page=${page}&per_page=200`);
 
     if (res.bills && res.bills.length > 0) {
-      const mapped: ZohoBill[] = res.bills.map((b) => ({
-        bill_id: b.bill_id,
-        vendor_id: b.vendor_id,
-        vendor_name: b.vendor_name,
-        bill_number: b.bill_number,
-        date: b.date,
-        due_date: b.due_date,
-        status: b.status,
-        total: Number(b.total || 0),
-        balance: Number(b.balance || 0),
-        currency_code: b.currency_code || 'OMR',
-        reference_number: b.reference_number || '',
-        notes: b.notes || ''
-      }));
+      const mapped: ZohoBill[] = res.bills.map((b) => {
+        const exchangeRate = Number(b.exchange_rate) || 1;
+        const totalOMR = b.bcy_total !== undefined && b.bcy_total !== null
+          ? Number(b.bcy_total)
+          : (b.currency_code === 'OMR' ? Number(b.total || 0) : Number((Number(b.total || 0) * exchangeRate).toFixed(3)));
+
+        const balanceOMR = b.bcy_balance !== undefined && b.bcy_balance !== null
+          ? Number(b.bcy_balance)
+          : (b.currency_code === 'OMR' ? Number(b.balance || 0) : Number((Number(b.balance || 0) * exchangeRate).toFixed(3)));
+
+        return {
+          bill_id: b.bill_id,
+          vendor_id: b.vendor_id,
+          vendor_name: b.vendor_name,
+          bill_number: b.bill_number,
+          date: b.date,
+          due_date: b.due_date,
+          status: b.status,
+          total: Number(totalOMR.toFixed(3)),
+          balance: Number(balanceOMR.toFixed(3)),
+          raw_total: Number(b.total || 0),
+          raw_balance: Number(b.balance || 0),
+          exchange_rate: exchangeRate,
+          currency_code: b.currency_code || 'OMR',
+          reference_number: b.reference_number || '',
+          notes: b.notes || ''
+        };
+      });
 
       allBills.push(...mapped);
     }
