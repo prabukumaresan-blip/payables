@@ -6,9 +6,14 @@ export async function GET(req: NextRequest) {
   const redirectUri = getZohoRedirectUri(req);
 
   if (!config.clientId) {
-    return NextResponse.json(
-      { error: 'ZOHO_CLIENT_ID is not set in .env.local' },
-      { status: 400 }
+    return NextResponse.redirect(
+      new URL(
+        '/vendors?zoho_error=' +
+          encodeURIComponent(
+            'Zoho Client ID is not configured. Please add ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN, and ZOHO_ORGANIZATION_ID to your environment variables (Vercel Settings / .env.local).'
+          ),
+        req.url
+      )
     );
   }
 
