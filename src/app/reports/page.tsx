@@ -6,7 +6,7 @@ import Papa from 'papaparse';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import AppLayout from '@/components/layout/AppLayout';
-import { getReports, getCategories, getVendors } from '@/lib/supabase/queries';
+import { getReports, getCategories, getVendors, getAllPayables } from '@/lib/supabase/queries';
 import { Payable, Category, Vendor } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
 import { getMonthsList } from '@/lib/utils/dates';
@@ -22,7 +22,11 @@ import {
   FileText,
   AlertTriangle,
   RefreshCw,
-  Zap
+  Zap,
+  Search,
+  Filter,
+  CreditCard,
+  CheckCircle2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Suspense } from 'react';
@@ -34,13 +38,16 @@ function ReportsContent() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
+  const [allPayables, setAllPayables] = useState<Payable[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [syncingZoho, setSyncingZoho] = useState(false);
   const [zohoSyncMessage, setZohoSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [unpaidOnly, setUnpaidOnly] = useState(false);
-  const [consolidateByVendor, setConsolidateByVendor] = useState(false);
+  const [viewMode, setViewMode] = useState<'detailed' | 'consolidated' | 'vendor_ledger'>('consolidated');
+  const [vendorSearchQuery, setVendorSearchQuery] = useState('');
+  const [vendorBalanceFilter, setVendorBalanceFilter] = useState<'all' | 'with_balance' | 'with_credit' | 'settled'>('all');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
 
   const reportRef = useRef<HTMLDivElement>(null);
@@ -48,17 +55,20 @@ function ReportsContent() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [cats, vList] = await Promise.all([
-        getCategories(),
-        getVendors()
-      ]);
       const start = startMonth < endMonth ? startMonth : endMonth;
       const end = startMonth < endMonth ? endMonth : startMonth;
       
-      const list = await getReports(start, end);
+      const [cats, vList, allPList, periodList] = await Promise.all([
+        getCategories(),
+        getVendors(),
+        getAllPayables(),
+        getReports(start, end)
+      ]);
+      
       setCategories(cats);
       setVendors(vList);
-      setPayables(list);
+      setAllPayables(allPList);
+      setPayables(periodList);
     } catch (e) {
       console.error('Error loading reports:', e);
     } finally {
@@ -163,45 +173,131 @@ function ReportsContent() {
       completionRate
     };
   }, [filteredPayables]);
-  // Aggregate stats by Vendor
-  const vendorSummaries = React.useMemo(() => {
+  // Comprehensive Vendor Balances & Zoho Reconciliation Map
+  const vendorLedgerData = React.useMemo(() => {
     const map = new Map<string, {
       name: string;
-      totalCount: number;
-      totalAmount: number;
-      paidAmount: number;
-      pendingAmount: number;
+      vendorObj?: Vendor;
+      periodCount: number;
+      periodTotal: number;
+      periodPaid: number;
+      periodPending: number;
+      allTimeCount: number;
+      allTimeTotal: number;
+      allTimePaid: number;
+      allTimePending: number;
+      zohoCredit: number;
+      zohoOutstanding: number;
+      netPayable: number;
     }>();
 
-    filteredPayables.forEach(p => {
-      const vName = p.vendor_name?.trim() || 'Other / Unassigned';
-      const existing = map.get(vName) || {
+    // 1. Process all database payables (all-time)
+    allPayables.forEach(p => {
+      const vName = (p.vendor_name || '').trim();
+      if (!vName) return;
+      const key = vName.toLowerCase();
+      const existing = map.get(key) || {
         name: vName,
-        totalCount: 0,
-        totalAmount: 0,
-        paidAmount: 0,
-        pendingAmount: 0
+        periodCount: 0,
+        periodTotal: 0,
+        periodPaid: 0,
+        periodPending: 0,
+        allTimeCount: 0,
+        allTimeTotal: 0,
+        allTimePaid: 0,
+        allTimePending: 0,
+        zohoCredit: 0,
+        zohoOutstanding: 0,
+        netPayable: 0
       };
 
-      existing.totalCount += 1;
-      existing.totalAmount += Number(p.amount);
-      if (p.status === 'paid') {
-        existing.paidAmount += Number(p.amount);
-      } else if (p.status === 'partial') {
-        existing.paidAmount += Number(p.paid_amount || 0);
-        existing.pendingAmount += (Number(p.amount) - Number(p.paid_amount || 0));
-      } else if (p.status !== 'cancelled') {
-        existing.pendingAmount += Number(p.amount);
-      }
+      const amt = Number(p.amount) || 0;
+      const paidAmt = p.status === 'paid' ? amt : (Number(p.paid_amount) || 0);
+      const pendingAmt = (p.status === 'paid' || p.status === 'cancelled') ? 0 : Math.max(0, amt - (Number(p.paid_amount) || 0));
 
-      map.set(vName, existing);
+      existing.allTimeCount += 1;
+      existing.allTimeTotal += amt;
+      existing.allTimePaid += paidAmt;
+      existing.allTimePending += pendingAmt;
+
+      map.set(key, existing);
+    });
+
+    // 2. Process filtered period payables
+    filteredPayables.forEach(p => {
+      const vName = (p.vendor_name || '').trim();
+      if (!vName) return;
+      const key = vName.toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        const amt = Number(p.amount) || 0;
+        const paidAmt = p.status === 'paid' ? amt : (Number(p.paid_amount) || 0);
+        const pendingAmt = (p.status === 'paid' || p.status === 'cancelled') ? 0 : Math.max(0, amt - (Number(p.paid_amount) || 0));
+
+        existing.periodCount += 1;
+        existing.periodTotal += amt;
+        existing.periodPaid += paidAmt;
+        existing.periodPending += pendingAmt;
+      }
+    });
+
+    // 3. Process all known vendors in vendors directory
+    vendors.forEach(v => {
+      const key = (v.name || '').trim().toLowerCase();
+      if (!key) return;
+      const existing = map.get(key) || {
+        name: v.name,
+        periodCount: 0,
+        periodTotal: 0,
+        periodPaid: 0,
+        periodPending: 0,
+        allTimeCount: 0,
+        allTimeTotal: 0,
+        allTimePaid: 0,
+        allTimePending: 0,
+        zohoCredit: 0,
+        zohoOutstanding: 0,
+        netPayable: 0
+      };
+
+      existing.vendorObj = v;
+      existing.zohoCredit = Number(v.unused_credits_payable_amount || 0);
+      existing.zohoOutstanding = Number(v.outstanding_payable_amount || 0);
+      const finalOutstanding = existing.allTimePending > 0 ? existing.allTimePending : existing.zohoOutstanding;
+      existing.allTimePending = finalOutstanding;
+      existing.netPayable = Math.max(0, finalOutstanding - existing.zohoCredit);
+
+      map.set(key, existing);
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      if (b.pendingAmount !== a.pendingAmount) return b.pendingAmount - a.pendingAmount; // Highest pending first
-      return b.totalAmount - a.totalAmount;
+      if (b.allTimePending !== a.allTimePending) return b.allTimePending - a.allTimePending;
+      if (b.zohoCredit !== a.zohoCredit) return b.zohoCredit - a.zohoCredit;
+      return b.allTimeTotal - a.allTimeTotal;
     });
-  }, [filteredPayables]);
+  }, [allPayables, filteredPayables, vendors]);
+
+  const filteredVendorLedgerData = React.useMemo(() => {
+    return vendorLedgerData.filter(v => {
+      if (vendorSearchQuery) {
+        const q = vendorSearchQuery.toLowerCase();
+        const matchName = v.name.toLowerCase().includes(q);
+        const matchContact = v.vendorObj?.contact_person?.toLowerCase().includes(q);
+        const matchPhone = v.vendorObj?.phone?.includes(q);
+        if (!matchName && !matchContact && !matchPhone) return false;
+      }
+      if (vendorBalanceFilter === 'with_balance') {
+        return v.allTimePending > 0;
+      }
+      if (vendorBalanceFilter === 'with_credit') {
+        return v.zohoCredit > 0;
+      }
+      if (vendorBalanceFilter === 'settled') {
+        return v.allTimePending <= 0;
+      }
+      return true;
+    });
+  }, [vendorLedgerData, vendorSearchQuery, vendorBalanceFilter]);
   const colorMap: Record<string, string> = {
     blue: '#3B82F6',
     violet: '#8B5CF6',
@@ -548,7 +644,86 @@ function ReportsContent() {
 `;
     });
 
-    xml += `  </Table>
+    // Sheet 3: Vendor Balances & Zoho Reconciliation Statement
+    xml += ` <Worksheet ss:Name="Vendor Balances">
+  <Table>
+   <Column ss:Width="40"/>
+   <Column ss:Width="250"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="110"/>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="Title"><Data ss:Type="String">Vendor Balances &amp; Zoho Reconciliation Statement</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:StyleID="Subtitle"><Data ss:Type="String">Generated: ${escapeXML(new Date().toLocaleDateString())}</Data></Cell>
+   </Row>
+   <Row ss:Height="12"><Cell/></Row>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="Header"><Data ss:Type="String">#</Data></Cell>
+    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Vendor / Entity Name</Data></Cell>
+    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Contact / Tel</Data></Cell>
+    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Bank Account</Data></Cell>
+    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">All-Time Invoiced</Data></Cell>
+    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Settled / Paid</Data></Cell>
+    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Outstanding Balance</Data></Cell>
+    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Zoho Advance Credit</Data></Cell>
+    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Net Payable</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">Status</Data></Cell>
+   </Row>
+`;
+
+    vendorLedgerData.forEach((v, idx) => {
+      const isZebra = idx % 2 === 1;
+      const rowStyle = isZebra ? 'Zebra' : 'Default';
+      const numStyle = isZebra ? 'CurrencyZebra' : 'Currency';
+      const centerStyle = isZebra ? 'ZebraCenter' : 'Center';
+      const statusText = v.allTimePending <= 0 
+        ? (v.zohoCredit > 0 ? `Credit: ${v.zohoCredit.toFixed(3)}` : 'Fully Settled')
+        : (v.allTimePaid > 0 ? 'Partially Paid' : 'Outstanding');
+
+      const contactText = [v.vendorObj?.contact_person, v.vendorObj?.phone].filter(Boolean).join(' / ');
+      const bankText = v.vendorObj?.bank_name && v.vendorObj?.account_no ? `${v.vendorObj.bank_name} - ${v.vendorObj.account_no}` : (v.vendorObj?.bank_account || '');
+
+      xml += `   <Row ss:Height="20">
+    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="Number">${idx + 1}</Data></Cell>
+    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(v.name)}</Data></Cell>
+    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(contactText)}</Data></Cell>
+    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(bankText)}</Data></Cell>
+    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.allTimeTotal}</Data></Cell>
+    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.allTimePaid}</Data></Cell>
+    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.allTimePending}</Data></Cell>
+    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.zohoCredit}</Data></Cell>
+    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.netPayable}</Data></Cell>
+    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${escapeXML(statusText)}</Data></Cell>
+   </Row>
+`;
+    });
+
+    const totInv = vendorLedgerData.reduce((s, v) => s + v.allTimeTotal, 0);
+    const totPaid = vendorLedgerData.reduce((s, v) => s + v.allTimePaid, 0);
+    const totPending = vendorLedgerData.reduce((s, v) => s + v.allTimePending, 0);
+    const totCredit = vendorLedgerData.reduce((s, v) => s + v.zohoCredit, 0);
+    const totNet = vendorLedgerData.reduce((s, v) => s + v.netPayable, 0);
+
+    xml += `   <Row ss:Height="22">
+    <Cell ss:StyleID="TotalRow"><Data ss:Type="String">TOTAL (${vendorLedgerData.length} Vendors)</Data></Cell>
+    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totInv}</Data></Cell>
+    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totPaid}</Data></Cell>
+    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totPending}</Data></Cell>
+    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totCredit}</Data></Cell>
+    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totNet}</Data></Cell>
+    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
+   </Row>
+  </Table>
  </Worksheet>
 </Workbook>
 `;
@@ -744,16 +919,17 @@ function ReportsContent() {
               </select>
             </div>
 
-            {/* View Mode: Consolidated Vendor Summary vs Detailed Itemized */}
+            {/* View Mode */}
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold">
               <span className="text-slate-500">View:</span>
               <select
-                value={consolidateByVendor ? 'consolidated' : 'detailed'}
-                onChange={(e) => setConsolidateByVendor(e.target.value === 'consolidated')}
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value as any)}
                 className="bg-transparent text-indigo-700 outline-none cursor-pointer font-bold"
               >
-                <option value="detailed">Detailed Itemized Breakdown</option>
-                <option value="consolidated">Consolidated Vendor Balances</option>
+                <option value="vendor_ledger">Vendor Balances Statement &amp; Zoho Reconciliation (All-Time)</option>
+                <option value="consolidated">Categorized Vendor Summary (Period)</option>
+                <option value="detailed">Detailed Itemized Breakdown (By Category)</option>
               </select>
             </div>
           </div>
@@ -999,9 +1175,245 @@ function ReportsContent() {
             </div>
           </div>
 
-          {/* Section 3: Consolidated Vendor Balances (Grouped by Category) OR Detailed Itemized Ledger */}
+          {/* Section 3: Vendor Ledger / Consolidated Vendor Balances / Detailed Itemized Ledger */}
           <div className="space-y-6">
-            {consolidateByVendor ? (
+            {viewMode === 'vendor_ledger' ? (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-3">
+                  <div>
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-indigo-600" />
+                      All-Time Vendor Balances &amp; Zoho Reconciliation Ledger
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Cumulative balances, settled payments, and live Zoho advance credits across all accounts.
+                    </p>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative min-w-[240px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search vendor, contact, phone..."
+                      value={vendorSearchQuery}
+                      onChange={(e) => setVendorSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                    />
+                    {vendorSearchQuery && (
+                      <button 
+                        onClick={() => setVendorSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <button
+                    onClick={() => setVendorBalanceFilter('all')}
+                    className={cn(
+                      "px-3 py-1 rounded-full font-semibold border transition-colors cursor-pointer",
+                      vendorBalanceFilter === 'all'
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    )}
+                  >
+                    All Vendors ({vendorLedgerData.length})
+                  </button>
+                  <button
+                    onClick={() => setVendorBalanceFilter('with_balance')}
+                    className={cn(
+                      "px-3 py-1 rounded-full font-semibold border transition-colors cursor-pointer",
+                      vendorBalanceFilter === 'with_balance'
+                        ? "bg-rose-600 text-white border-rose-600"
+                        : "bg-white text-rose-700 border-rose-200 hover:bg-rose-50"
+                    )}
+                  >
+                    With Outstanding Balance ({vendorLedgerData.filter(v => v.allTimePending > 0).length})
+                  </button>
+                  <button
+                    onClick={() => setVendorBalanceFilter('with_credit')}
+                    className={cn(
+                      "px-3 py-1 rounded-full font-semibold border transition-colors cursor-pointer",
+                      vendorBalanceFilter === 'with_credit'
+                        ? "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                    )}
+                  >
+                    With Advance Credit ({vendorLedgerData.filter(v => v.zohoCredit > 0).length})
+                  </button>
+                  <button
+                    onClick={() => setVendorBalanceFilter('settled')}
+                    className={cn(
+                      "px-3 py-1 rounded-full font-semibold border transition-colors cursor-pointer",
+                      vendorBalanceFilter === 'settled'
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                    )}
+                  >
+                    Fully Settled ({vendorLedgerData.filter(v => v.allTimePending <= 0).length})
+                  </button>
+                </div>
+
+                {/* Ledger Table */}
+                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-semibold uppercase tracking-wider">
+                        <th className="py-3 px-3 w-10">#</th>
+                        <th className="py-3 px-3 min-w-[200px]">Vendor / Entity Name</th>
+                        <th className="py-3 px-3 text-center">Period Bills</th>
+                        <th className="py-3 px-3 text-right">All-Time Invoiced</th>
+                        <th className="py-3 px-3 text-right">Settled / Paid</th>
+                        <th className="py-3 px-3 text-right">Outstanding Balance</th>
+                        <th className="py-3 px-3 text-right">Zoho Advance Credit</th>
+                        <th className="py-3 px-3 text-right">Net Payable</th>
+                        <th className="py-3 px-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {filteredVendorLedgerData.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                            No vendors matching the selected criteria.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredVendorLedgerData.map((v, idx) => {
+                          const hasCredit = v.zohoCredit > 0;
+                          const hasBalance = v.allTimePending > 0;
+
+                          return (
+                            <tr key={v.name} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="py-3 px-3 text-slate-400 font-numeric">{idx + 1}</td>
+                              <td className="py-3 px-3">
+                                <span className="font-bold text-slate-900 text-xs block">{v.name}</span>
+                                {v.vendorObj && (
+                                  <div className="text-[11px] text-slate-500 mt-0.5 space-y-0.5">
+                                    {v.vendorObj.contact_person && (
+                                      <span>Contact: {v.vendorObj.contact_person} </span>
+                                    )}
+                                    {v.vendorObj.phone && (
+                                      <span>• Tel: {v.vendorObj.phone} </span>
+                                    )}
+                                    {v.vendorObj.bank_name && v.vendorObj.account_no && (
+                                      <span className="block text-[10px] text-slate-400 font-mono">
+                                        {v.vendorObj.bank_name} - {v.vendorObj.account_no}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-center font-numeric text-slate-600">
+                                {v.periodCount > 0 ? (
+                                  <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                                    {v.periodCount} bills
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right font-numeric text-slate-800">
+                                {formatOMR(v.allTimeTotal)}
+                              </td>
+                              <td className="py-3 px-3 text-right font-numeric text-emerald-600 font-medium">
+                                {formatOMR(v.allTimePaid)}
+                              </td>
+                              <td className="py-3 px-3 text-right font-numeric font-bold">
+                                {hasBalance ? (
+                                  <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200/60 font-mono">
+                                    {formatOMR(v.allTimePending)}
+                                  </span>
+                                ) : (
+                                  <span className="text-emerald-600 font-mono">
+                                    {formatOMR(0)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right font-numeric font-semibold">
+                                {hasCredit ? (
+                                  <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-mono">
+                                    {formatOMR(v.zohoCredit)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 font-mono">
+                                    {formatOMR(0)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right font-numeric font-bold">
+                                {v.netPayable > 0 ? (
+                                  <span className="text-slate-900 font-mono font-bold text-xs">
+                                    {formatOMR(v.netPayable)}
+                                  </span>
+                                ) : (
+                                  <span className="text-emerald-600 font-mono">
+                                    {formatOMR(0)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                {!hasBalance ? (
+                                  hasCredit ? (
+                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                                      Credit: OMR {formatOMR(v.zohoCredit)}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      Fully Settled
+                                    </span>
+                                  )
+                                ) : v.allTimePaid > 0 ? (
+                                  <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                                    Partially Paid
+                                  </span>
+                                ) : (
+                                  <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                                    Outstanding
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-900 text-white font-bold text-xs border-t border-slate-300">
+                        <td colSpan={2} className="py-3 px-3 uppercase tracking-wider text-[11px] text-slate-300">
+                          Total ({filteredVendorLedgerData.length} Vendors)
+                        </td>
+                        <td className="py-3 px-3 text-center font-numeric text-slate-300">
+                          {filteredVendorLedgerData.reduce((sum, v) => sum + v.periodCount, 0)} bills
+                        </td>
+                        <td className="py-3 px-3 text-right font-numeric text-white">
+                          {formatOMR(filteredVendorLedgerData.reduce((sum, v) => sum + v.allTimeTotal, 0))}
+                        </td>
+                        <td className="py-3 px-3 text-right font-numeric text-emerald-400">
+                          {formatOMR(filteredVendorLedgerData.reduce((sum, v) => sum + v.allTimePaid, 0))}
+                        </td>
+                        <td className="py-3 px-3 text-right font-numeric text-rose-400 font-mono">
+                          {formatOMR(filteredVendorLedgerData.reduce((sum, v) => sum + v.allTimePending, 0))}
+                        </td>
+                        <td className="py-3 px-3 text-right font-numeric text-emerald-400 font-mono">
+                          {formatOMR(filteredVendorLedgerData.reduce((sum, v) => sum + v.zohoCredit, 0))}
+                        </td>
+                        <td className="py-3 px-3 text-right font-numeric text-amber-300 font-mono">
+                          {formatOMR(filteredVendorLedgerData.reduce((sum, v) => sum + v.netPayable, 0))}
+                        </td>
+                        <td className="py-3 px-3 text-center text-[10px] text-slate-400">
+                          OMR
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            ) : viewMode === 'consolidated' ? (
               <div className="space-y-6">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                   <h4 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">

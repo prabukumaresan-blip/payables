@@ -713,28 +713,83 @@ export async function getAllPayables(): Promise<Payable[]> {
 
 export async function getVendors(): Promise<Vendor[]> {
   const db = getMockDb();
+  let vendorsList: Vendor[] = [];
+
   if (!shouldUseMock()) {
     try {
       const supabase = createBrowserSupabase();
       const { data, error } = await supabase.from('vendors').select('*').order('name');
       if (!error && data && data.length > 0) {
-        // Merge with any local mock Zoho metadata
-        return data.map((v: any) => {
-          const localMatch = db.vendors.find(lv => lv.id === v.id || lv.name.toLowerCase().trim() === v.name.toLowerCase().trim());
-          return {
-            ...v,
-            zoho_contact_id: v.zoho_contact_id !== undefined ? v.zoho_contact_id : (localMatch?.zoho_contact_id || null),
-            outstanding_payable_amount: v.outstanding_payable_amount !== undefined ? v.outstanding_payable_amount : (localMatch?.outstanding_payable_amount || 0),
-            unused_credits_payable_amount: v.unused_credits_payable_amount !== undefined ? v.unused_credits_payable_amount : (localMatch?.unused_credits_payable_amount || 0),
-            zoho_last_synced_at: v.zoho_last_synced_at !== undefined ? v.zoho_last_synced_at : (localMatch?.zoho_last_synced_at || null)
-          };
-        });
+        vendorsList = data;
       }
     } catch (e) {
       console.warn('Error fetching Supabase vendors, using local:', e);
     }
   }
-  return db.vendors.sort((a, b) => a.name.localeCompare(b.name));
+
+  if (vendorsList.length === 0) {
+    vendorsList = db.vendors;
+  }
+
+  // Calculate live payables balance for every vendor from all database payables
+  let allPayables: Payable[] = [];
+  try {
+    allPayables = await getAllPayables();
+  } catch (e) {
+    allPayables = db.payables;
+  }
+
+  // Build vendor payables aggregation map
+  const vendorStatsMap = new Map<string, {
+    totalInvoiced: number;
+    totalPaid: number;
+    totalPending: number;
+    billsCount: number;
+    unpaidBillsCount: number;
+  }>();
+
+  allPayables.forEach((p) => {
+    const vName = (p.vendor_name || '').trim().toLowerCase();
+    if (!vName) return;
+
+    const stat = vendorStatsMap.get(vName) || {
+      totalInvoiced: 0,
+      totalPaid: 0,
+      totalPending: 0,
+      billsCount: 0,
+      unpaidBillsCount: 0
+    };
+
+    const amt = Number(p.amount) || 0;
+    const paidAmt = p.status === 'paid' ? amt : (Number(p.paid_amount) || 0);
+    const pendingAmt = p.status === 'paid' || p.status === 'cancelled' ? 0 : Math.max(0, amt - (Number(p.paid_amount) || 0));
+
+    stat.totalInvoiced += amt;
+    stat.totalPaid += paidAmt;
+    stat.totalPending += pendingAmt;
+    stat.billsCount += 1;
+    if (pendingAmt > 0) stat.unpaidBillsCount += 1;
+
+    vendorStatsMap.set(vName, stat);
+  });
+
+  return vendorsList.map((v) => {
+    const vNameKey = (v.name || '').trim().toLowerCase();
+    const stats = vendorStatsMap.get(vNameKey);
+    const localMatch = db.vendors.find(lv => lv.id === v.id || lv.name.toLowerCase().trim() === vNameKey);
+
+    const calculatedPending = stats ? Number(stats.totalPending.toFixed(3)) : 0;
+    const existingOutstanding = Number(v.outstanding_payable_amount || localMatch?.outstanding_payable_amount || 0);
+    const finalOutstanding = calculatedPending > 0 ? calculatedPending : existingOutstanding;
+
+    return {
+      ...v,
+      zoho_contact_id: v.zoho_contact_id !== undefined ? v.zoho_contact_id : (localMatch?.zoho_contact_id || null),
+      outstanding_payable_amount: finalOutstanding,
+      unused_credits_payable_amount: v.unused_credits_payable_amount !== undefined ? v.unused_credits_payable_amount : (localMatch?.unused_credits_payable_amount || 0),
+      zoho_last_synced_at: v.zoho_last_synced_at !== undefined ? v.zoho_last_synced_at : (localMatch?.zoho_last_synced_at || null)
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function createVendor(vendorData: Omit<Vendor, 'id'>): Promise<Vendor> {

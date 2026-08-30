@@ -102,7 +102,19 @@ export async function POST(req: NextRequest) {
 
       // Batch Upsert Vendors in chunks of 100
       for (let i = 0; i < vendorsToUpsert.length; i += 100) {
-        const chunk = vendorsToUpsert.slice(i, i + 100);
+        const chunk = vendorsToUpsert.slice(i, i + 100).map(v => ({
+          id: v.id,
+          name: v.name,
+          contact_person: v.contact_person || null,
+          email: v.email || null,
+          phone: v.phone || null,
+          bank_name: v.bank_name || null,
+          account_no: v.account_no || null,
+          swift_code: v.swift_code || null,
+          bank_type: v.bank_type || 'BANK_MUSCAT',
+          bank_account: v.bank_account || null,
+          created_at: v.created_at || now
+        }));
         const { error: upsertErr } = await supabase.from('vendors').upsert(chunk, { onConflict: 'id' });
         if (upsertErr) {
           console.error('Vendor batch upsert error:', upsertErr);
