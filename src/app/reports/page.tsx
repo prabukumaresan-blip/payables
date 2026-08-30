@@ -35,6 +35,8 @@ function ReportsContent() {
   const [loading, setLoading] = useState(true);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [unpaidOnly, setUnpaidOnly] = useState(false);
+  const [consolidateByVendor, setConsolidateByVendor] = useState(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
 
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -59,13 +61,18 @@ function ReportsContent() {
     loadData();
   }, [startMonth, endMonth]);
 
-  // Filter payables based on All vs Unpaid
+  // Filter payables based on Category & All vs Unpaid
   const filteredPayables = React.useMemo(() => {
-    if (unpaidOnly) {
-      return payables.filter((p) => p.status === 'pending' || p.status === 'overdue' || p.status === 'partial');
-    }
-    return payables;
-  }, [payables, unpaidOnly]);
+    return payables.filter((p) => {
+      if (selectedCategoryFilter !== 'all' && p.category_id !== selectedCategoryFilter) {
+        return false;
+      }
+      if (unpaidOnly) {
+        return p.status === 'pending' || p.status === 'overdue' || p.status === 'partial';
+      }
+      return true;
+    });
+  }, [payables, unpaidOnly, selectedCategoryFilter]);
 
   // Aggregate stats by Category based on filtered expenses
   const categorySummaries = React.useMemo(() => {
@@ -119,8 +126,45 @@ function ReportsContent() {
       completionRate
     };
   }, [filteredPayables]);
+  // Aggregate stats by Vendor
+  const vendorSummaries = React.useMemo(() => {
+    const map = new Map<string, {
+      name: string;
+      totalCount: number;
+      totalAmount: number;
+      paidAmount: number;
+      pendingAmount: number;
+    }>();
 
-  // Recharts color mapper
+    filteredPayables.forEach(p => {
+      const vName = p.vendor_name?.trim() || 'Other / Unassigned';
+      const existing = map.get(vName) || {
+        name: vName,
+        totalCount: 0,
+        totalAmount: 0,
+        paidAmount: 0,
+        pendingAmount: 0
+      };
+
+      existing.totalCount += 1;
+      existing.totalAmount += Number(p.amount);
+      if (p.status === 'paid') {
+        existing.paidAmount += Number(p.amount);
+      } else if (p.status === 'partial') {
+        existing.paidAmount += Number(p.paid_amount || 0);
+        existing.pendingAmount += (Number(p.amount) - Number(p.paid_amount || 0));
+      } else if (p.status !== 'cancelled') {
+        existing.pendingAmount += Number(p.amount);
+      }
+
+      map.set(vName, existing);
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (b.pendingAmount !== a.pendingAmount) return b.pendingAmount - a.pendingAmount; // Highest pending first
+      return b.totalAmount - a.totalAmount;
+    });
+  }, [filteredPayables]);
   const colorMap: Record<string, string> = {
     blue: '#3B82F6',
     violet: '#8B5CF6',
@@ -635,16 +679,44 @@ function ReportsContent() {
               </select>
             </div>
 
+            {/* Category Filter */}
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold">
+              <span className="text-slate-500">Category:</span>
+              <select
+                value={selectedCategoryFilter}
+                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                className="bg-transparent text-slate-800 outline-none cursor-pointer font-semibold max-w-[150px] truncate"
+              >
+                <option value="all">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
             {/* All vs Unpaid Filter */}
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold">
               <span className="text-slate-500">Show:</span>
               <select
                 value={unpaidOnly ? 'unpaid' : 'all'}
                 onChange={(e) => setUnpaidOnly(e.target.value === 'unpaid')}
-                className="bg-transparent text-slate-800 outline-none cursor-pointer"
+                className="bg-transparent text-slate-800 outline-none cursor-pointer font-semibold"
               >
                 <option value="all">All Expenses</option>
                 <option value="unpaid">Only Unpaid Expenses</option>
+              </select>
+            </div>
+
+            {/* View Mode: Consolidated Vendor Summary vs Detailed Itemized */}
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold">
+              <span className="text-slate-500">View:</span>
+              <select
+                value={consolidateByVendor ? 'consolidated' : 'detailed'}
+                onChange={(e) => setConsolidateByVendor(e.target.value === 'consolidated')}
+                className="bg-transparent text-indigo-700 outline-none cursor-pointer font-bold"
+              >
+                <option value="detailed">Detailed Itemized Breakdown</option>
+                <option value="consolidated">Consolidated Vendor Balances</option>
               </select>
             </div>
           </div>
@@ -856,25 +928,188 @@ function ReportsContent() {
             </div>
           </div>
 
-          {/* Section 3: Highly Detailed Ledger Grouped by Category */}
+          {/* Section 3: Consolidated Vendor Balances (Grouped by Category) OR Detailed Itemized Ledger */}
           <div className="space-y-6">
-            {(() => {
-              // Find the first category that has payables
-              let firstVisibleCatId: string | null = null;
-              for (const cat of categories) {
-                const hasPayables = filteredPayables.some((p) => p.category_id === cat.id);
-                if (hasPayables) {
-                  firstVisibleCatId = cat.id;
-                  break;
+            {consolidateByVendor ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-indigo-600" />
+                    Categorized Consolidated Payables (Vendor-wise)
+                  </h4>
+                  <span className="text-xs text-slate-500 font-semibold">
+                    {categories.filter(cat => filteredPayables.some(p => p.category_id === cat.id)).length} Active Categories
+                  </span>
+                </div>
+
+                {categories.map((cat) => {
+                  const catPayables = filteredPayables.filter((p) => p.category_id === cat.id);
+                  if (catPayables.length === 0) return null;
+
+                  // Group vendors within this category
+                  const catVendorMap = new Map<string, {
+                    name: string;
+                    totalCount: number;
+                    totalAmount: number;
+                    paidAmount: number;
+                    pendingAmount: number;
+                  }>();
+
+                  catPayables.forEach(p => {
+                    const vName = p.vendor_name?.trim() || 'Other / Unassigned';
+                    const existing = catVendorMap.get(vName) || {
+                      name: vName,
+                      totalCount: 0,
+                      totalAmount: 0,
+                      paidAmount: 0,
+                      pendingAmount: 0
+                    };
+                    existing.totalCount += 1;
+                    existing.totalAmount += Number(p.amount);
+                    if (p.status === 'paid') {
+                      existing.paidAmount += Number(p.amount);
+                    } else if (p.status === 'partial') {
+                      existing.paidAmount += Number(p.paid_amount || 0);
+                      existing.pendingAmount += (Number(p.amount) - Number(p.paid_amount || 0));
+                    } else if (p.status !== 'cancelled') {
+                      existing.pendingAmount += Number(p.amount);
+                    }
+                    catVendorMap.set(vName, existing);
+                  });
+
+                  const catVendors = Array.from(catVendorMap.values()).sort((a, b) => b.pendingAmount - a.pendingAmount);
+                  const catTotal = catVendors.reduce((sum, v) => sum + v.totalAmount, 0);
+                  const catPaid = catVendors.reduce((sum, v) => sum + v.paidAmount, 0);
+                  const catPending = catVendors.reduce((sum, v) => sum + v.pendingAmount, 0);
+
+                  return (
+                    <div key={cat.id} data-pdf-section className="space-y-3 bg-slate-50/50 p-4 rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                        <h5 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                          <span className={cn("h-2.5 w-2.5 rounded-full",
+                            cat.color === 'blue' ? 'bg-blue-500' :
+                            cat.color === 'violet' ? 'bg-violet-500' :
+                            cat.color === 'amber' ? 'bg-amber-500' :
+                            cat.color === 'orange' ? 'bg-orange-500' :
+                            cat.color === 'green' ? 'bg-emerald-500' :
+                            cat.color === 'rose' ? 'bg-rose-500' :
+                            cat.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
+                          )} />
+                          {cat.name}
+                        </h5>
+                        <span className="text-[11px] text-slate-500 font-semibold">
+                          {catVendors.length} {catVendors.length === 1 ? 'vendor' : 'vendors'} • Subtotal: <strong className="text-slate-900 font-mono">OMR {formatOMR(catTotal)}</strong>
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-sm">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+                              <th className="py-2.5 px-3 w-10">#</th>
+                              <th className="py-2.5 px-3">Vendor / Entity Name</th>
+                              <th className="py-2.5 px-3 text-center">Bills Count</th>
+                              <th className="py-2.5 px-3 text-right">Total Invoiced (OMR)</th>
+                              <th className="py-2.5 px-3 text-right">Settled / Paid (OMR)</th>
+                              <th className="py-2.5 px-3 text-right">Outstanding Balance (OMR)</th>
+                              <th className="py-2.5 px-3 text-center">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-700">
+                            {catVendors.map((v, idx) => (
+                              <tr key={v.name} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-2.5 px-3 text-slate-400 font-numeric">{idx + 1}</td>
+                                <td className="py-2.5 px-3 font-bold text-slate-900 text-xs">{v.name}</td>
+                                <td className="py-2.5 px-3 text-center font-numeric text-slate-600">{v.totalCount}</td>
+                                <td className="py-2.5 px-3 text-right font-numeric text-slate-800">{formatOMR(v.totalAmount)}</td>
+                                <td className="py-2.5 px-3 text-right font-numeric text-emerald-600 font-medium">{formatOMR(v.paidAmount)}</td>
+                                <td className="py-2.5 px-3 text-right font-numeric font-bold">
+                                  {v.pendingAmount > 0 ? (
+                                    <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200/60 font-mono">
+                                      {formatOMR(v.pendingAmount)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-emerald-600 font-mono">
+                                      {formatOMR(0)}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  {v.pendingAmount <= 0 ? (
+                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      Fully Paid
+                                    </span>
+                                  ) : v.paidAmount > 0 ? (
+                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                                      Partially Paid
+                                    </span>
+                                  ) : (
+                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                                      Outstanding
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
+                              <td colSpan={2} className="py-2.5 px-3 text-slate-600 uppercase tracking-wider text-[10px]">
+                                {cat.name} Subtotal
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-numeric">{catPayables.length}</td>
+                              <td className="py-2.5 px-3 text-right font-numeric">{formatOMR(catTotal)}</td>
+                              <td className="py-2.5 px-3 text-right font-numeric text-emerald-600">{formatOMR(catPaid)}</td>
+                              <td className="py-2.5 px-3 text-right font-numeric text-rose-600 font-mono">{formatOMR(catPending)}</td>
+                              <td className="py-2.5 px-3 text-center text-[10px] text-slate-500 font-numeric">
+                                {catTotal > 0 ? ((catPaid / catTotal) * 100).toFixed(1) : 0}% Settled
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Grand Total Bar */}
+                <div className="bg-slate-900 text-white rounded-xl p-4 flex items-center justify-between shadow-md">
+                  <div>
+                    <span className="text-xs uppercase tracking-wider text-slate-400 font-bold">Consolidated Grand Total</span>
+                    <p className="text-lg font-bold font-numeric text-white mt-0.5">
+                      OMR {formatOMR(grandTotal.totalAmount)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-6 text-right">
+                    <div>
+                      <span className="text-[10px] uppercase text-emerald-400 font-bold block">Total Cleared</span>
+                      <span className="text-sm font-mono font-bold text-emerald-400">OMR {formatOMR(grandTotal.paidAmount)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase text-rose-400 font-bold block">Total Outstanding</span>
+                      <span className="text-sm font-mono font-bold text-rose-400">OMR {formatOMR(grandTotal.pendingAmount)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              (() => {
+                // Find the first category that has payables
+                let firstVisibleCatId: string | null = null;
+                for (const cat of categories) {
+                  const hasPayables = filteredPayables.some((p) => p.category_id === cat.id);
+                  if (hasPayables) {
+                    firstVisibleCatId = cat.id;
+                    break;
+                  }
                 }
-              }
 
-              return categories.map((cat) => {
-                const catPayables = filteredPayables
-                  .filter((p) => p.category_id === cat.id)
-                  .sort((a, b) => a.due_date.localeCompare(b.due_date));
+                return categories.map((cat) => {
+                  const catPayables = filteredPayables
+                    .filter((p) => p.category_id === cat.id)
+                    .sort((a, b) => a.due_date.localeCompare(b.due_date));
 
-                if (catPayables.length === 0) return null;
+                  if (catPayables.length === 0) return null;
 
                 const catTotal = catPayables.reduce((sum, p) => {
                   const amt = unpaidOnly 
@@ -1009,7 +1244,7 @@ function ReportsContent() {
                   </div>
                 );
               });
-            })()}
+            })())}
           </div>
         </div>
       </div>

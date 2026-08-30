@@ -712,12 +712,29 @@ export async function getAllPayables(): Promise<Payable[]> {
 }
 
 export async function getVendors(): Promise<Vendor[]> {
+  const db = getMockDb();
   if (!shouldUseMock()) {
-    const supabase = createBrowserSupabase();
-    const { data, error } = await supabase.from('vendors').select('*').order('name');
-    if (!error && data) return data;
+    try {
+      const supabase = createBrowserSupabase();
+      const { data, error } = await supabase.from('vendors').select('*').order('name');
+      if (!error && data && data.length > 0) {
+        // Merge with any local mock Zoho metadata
+        return data.map((v: any) => {
+          const localMatch = db.vendors.find(lv => lv.id === v.id || lv.name.toLowerCase().trim() === v.name.toLowerCase().trim());
+          return {
+            ...v,
+            zoho_contact_id: v.zoho_contact_id !== undefined ? v.zoho_contact_id : (localMatch?.zoho_contact_id || null),
+            outstanding_payable_amount: v.outstanding_payable_amount !== undefined ? v.outstanding_payable_amount : (localMatch?.outstanding_payable_amount || 0),
+            unused_credits_payable_amount: v.unused_credits_payable_amount !== undefined ? v.unused_credits_payable_amount : (localMatch?.unused_credits_payable_amount || 0),
+            zoho_last_synced_at: v.zoho_last_synced_at !== undefined ? v.zoho_last_synced_at : (localMatch?.zoho_last_synced_at || null)
+          };
+        });
+      }
+    } catch (e) {
+      console.warn('Error fetching Supabase vendors, using local:', e);
+    }
   }
-  return getMockDb().vendors.sort((a, b) => a.name.localeCompare(b.name));
+  return db.vendors.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function createVendor(vendorData: Omit<Vendor, 'id'>): Promise<Vendor> {
@@ -758,14 +775,17 @@ export async function updateVendor(id: string, vendorData: Partial<Omit<Vendor, 
   };
 
   if (!shouldUseMock()) {
-    const supabase = createBrowserSupabase();
-    const { error } = await supabase
-      .from('vendors')
-      .update(vendorData)
-      .eq('id', id);
-    if (error) {
-      console.error('Error updating vendor in Supabase:', error);
-      throw error;
+    try {
+      const supabase = createBrowserSupabase();
+      const { error } = await supabase
+        .from('vendors')
+        .update(vendorData)
+        .eq('id', id);
+      if (error) {
+        console.warn('Supabase vendor update warning (using local fallback):', error.message);
+      }
+    } catch (e) {
+      console.warn('Supabase vendor update failed, saved locally:', e);
     }
   }
 

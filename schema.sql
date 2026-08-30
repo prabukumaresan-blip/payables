@@ -127,3 +127,14 @@ CREATE TABLE IF NOT EXISTS payment_history (
 -- Index for payment_history lookup
 CREATE INDEX IF NOT EXISTS idx_payment_history_payable_id ON payment_history(payable_id);
 
+-- 8. Zoho Books Integration Columns
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS zoho_contact_id TEXT;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS outstanding_payable_amount NUMERIC(15, 3) DEFAULT 0;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS unused_credits_payable_amount NUMERIC(15, 3) DEFAULT 0;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS zoho_last_synced_at TIMESTAMPTZ;
+
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS zoho_bill_id TEXT;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS zoho_bill_number TEXT;
+CREATE INDEX IF NOT EXISTS idx_payables_zoho_bill_id ON payables(zoho_bill_id);
+CREATE INDEX IF NOT EXISTS idx_vendors_zoho_contact_id ON vendors(zoho_contact_id);
+

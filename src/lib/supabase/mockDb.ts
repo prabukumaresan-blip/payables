@@ -18,6 +18,10 @@ export interface Vendor {
   account_no?: string | null;
   swift_code?: string | null;
   bank_type?: 'BANK_MUSCAT' | 'OTHER_BANK' | null;
+  zoho_contact_id?: string | null;
+  outstanding_payable_amount?: number | null;
+  unused_credits_payable_amount?: number | null;
+  zoho_last_synced_at?: string | null;
   created_at?: string;
 }
 
@@ -74,6 +78,8 @@ export interface Payable {
   month_year: string;
   created_at: string;
   updated_at: string;
+  zoho_bill_id?: string | null;
+  zoho_bill_number?: string | null;
   pdc?: PDC | null;
   loan?: LoanSchedule | null;
   category?: Category | null;

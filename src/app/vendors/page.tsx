@@ -31,7 +31,13 @@ import {
   Download,
   FileText,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
+  Zap,
+  Wallet,
+  Link2,
+  CheckCheck,
+  Unlink
 } from 'lucide-react';
 import { parseVendorImportFile, ParsedVendorRow } from '@/lib/utils/fileUtils';
 
@@ -41,6 +47,20 @@ function VendorsContent() {
   const [payables, setPayables] = useState<Payable[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Zoho Sync State
+  const [zohoSyncing, setZohoSyncing] = useState(false);
+  const [zohoConfigured, setZohoConfigured] = useState<boolean | null>(null);
+  const [zohoSyncMessage, setZohoSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [balanceFilter, setBalanceFilter] = useState<'all' | 'with_balance'>('all');
+
+  // Zoho Match Modal State
+  const [matchingVendor, setMatchingVendor] = useState<Vendor | null>(null);
+  const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
+  const [zohoContactsList, setZohoContactsList] = useState<any[]>([]);
+  const [zohoSearchQuery, setZohoSearchQuery] = useState('');
+  const [fetchingZohoContacts, setFetchingZohoContacts] = useState(false);
+  const [savingMatch, setSavingMatch] = useState(false);
 
   // Form Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -224,6 +244,137 @@ function VendorsContent() {
     setImportProgress(null);
   };
 
+  // Open Match Modal
+  const handleOpenMatchModal = async (vendor: Vendor) => {
+    setMatchingVendor(vendor);
+    setZohoSearchQuery(vendor.name);
+    setIsMatchModalOpen(true);
+    setFetchingZohoContacts(true);
+
+    try {
+      // Check cached vendors or fetch from sync
+      const res = await fetch('/api/zoho/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.data?.vendors) {
+        setZohoContactsList(data.data.vendors);
+      }
+    } catch (e) {
+      console.error('Error fetching Zoho contacts for matching:', e);
+    } finally {
+      setFetchingZohoContacts(false);
+    }
+  };
+
+  // Link Vendor with Zoho contact
+  const handleLinkVendor = async (zohoContact: any) => {
+    if (!matchingVendor) return;
+    setSavingMatch(true);
+    try {
+      const updateData = {
+        zoho_contact_id: zohoContact.contact_id || zohoContact.zoho_contact_id,
+        outstanding_payable_amount: Number(zohoContact.outstanding_payable_amount || zohoContact.balance || 0),
+        unused_credits_payable_amount: Number(zohoContact.unused_credits_payable_amount || zohoContact.unused_credits || 0),
+        zoho_last_synced_at: new Date().toISOString()
+      };
+
+      await updateVendor(matchingVendor.id, updateData);
+      
+      // Also update local storage cache if needed
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('payables_tracker_v2_vendors');
+        if (stored) {
+          const list = JSON.parse(stored);
+          const idx = list.findIndex((v: any) => v.id === matchingVendor.id);
+          if (idx !== -1) {
+            list[idx] = { ...list[idx], ...updateData };
+            localStorage.setItem('payables_tracker_v2_vendors', JSON.stringify(list));
+          }
+        }
+      }
+
+      await loadData();
+      setIsMatchModalOpen(false);
+      setMatchingVendor(null);
+    } catch (err: any) {
+      console.error('Error linking vendor:', err);
+      alert('Failed to link vendor. Please try again.');
+    } finally {
+      setSavingMatch(false);
+    }
+  };
+
+  // Unlink Vendor from Zoho
+  const handleUnlinkVendor = async () => {
+    if (!matchingVendor) return;
+    setSavingMatch(true);
+    try {
+      const updateData = {
+        zoho_contact_id: null,
+        outstanding_payable_amount: 0,
+        unused_credits_payable_amount: 0,
+        zoho_last_synced_at: null
+      };
+
+      await updateVendor(matchingVendor.id, updateData);
+
+      // Also update local storage cache
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('payables_tracker_v2_vendors');
+        if (stored) {
+          const list = JSON.parse(stored);
+          const idx = list.findIndex((v: any) => v.id === matchingVendor.id);
+          if (idx !== -1) {
+            list[idx] = { ...list[idx], ...updateData };
+            localStorage.setItem('payables_tracker_v2_vendors', JSON.stringify(list));
+          }
+        }
+      }
+
+      await loadData();
+      setIsMatchModalOpen(false);
+      setMatchingVendor(null);
+    } catch (err: any) {
+      console.error('Error unlinking vendor:', err);
+      alert('Failed to unlink vendor.');
+    } finally {
+      setSavingMatch(false);
+    }
+  };
+
+  // Trigger Zoho Books Sync
+  const handleZohoSync = async () => {
+    setZohoSyncing(true);
+    setZohoSyncMessage(null);
+    try {
+      const res = await fetch('/api/zoho/sync', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to sync with Zoho Books');
+      }
+
+      // Save vendors directly in localStorage
+      if (typeof window !== 'undefined' && data.data?.vendors) {
+        localStorage.setItem('payables_tracker_v2_vendors', JSON.stringify(data.data.vendors));
+      }
+
+      setZohoSyncMessage({
+        type: 'success',
+        text: `Zoho Books Synced! (${data.data.totalZohoVendors} vendors updated, ${data.data.syncedBillsCount} bills synced)`
+      });
+
+      await loadData();
+    } catch (err: any) {
+      console.error('Zoho sync error:', err);
+      setZohoSyncMessage({
+        type: 'error',
+        text: err.message || 'Failed to sync with Zoho Books. Please check API credentials.'
+      });
+    } finally {
+      setZohoSyncing(false);
+    }
+  };
+
   // Load Data
   const loadData = async () => {
     setLoading(true);
@@ -232,6 +383,15 @@ function VendorsContent() {
       const pList = await getAllPayables();
       setVendors(vList);
       setPayables(pList);
+
+      // Check Zoho configuration status
+      try {
+        const statRes = await fetch('/api/zoho/status');
+        const statData = await statRes.json();
+        setZohoConfigured(Boolean(statData.configured));
+      } catch (e) {
+        console.error('Error checking Zoho status:', e);
+      }
     } catch (e) {
       console.error('Error loading vendors data:', e);
     } finally {
@@ -241,25 +401,53 @@ function VendorsContent() {
 
   useEffect(() => {
     loadData();
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('zoho_connected') === 'true') {
+        setZohoSyncMessage({
+          type: 'success',
+          text: 'Zoho Books successfully connected! Ready to sync vendor balances.'
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (params.get('zoho_error')) {
+        setZohoSyncMessage({
+          type: 'error',
+          text: `Zoho Connection Error: ${params.get('zoho_error')}`
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
   }, []);
 
-  // Filtered vendors
-  const filteredVendors = vendors.filter(v => {
-    const query = searchQuery.toLowerCase();
-    return (
-      v.name.toLowerCase().includes(query) ||
-      (v.contact_person && v.contact_person.toLowerCase().includes(query)) ||
-      (v.email && v.email.toLowerCase().includes(query)) ||
-      (v.bank_name && v.bank_name.toLowerCase().includes(query)) ||
-      (v.account_no && v.account_no.toLowerCase().includes(query))
-    );
-  });
+  // Filtered and sorted vendors
+  const filteredVendors = vendors
+    .filter(v => {
+      if (balanceFilter === 'with_balance' && !(Number(v.outstanding_payable_amount) > 0)) {
+        return false;
+      }
+      const query = searchQuery.toLowerCase();
+      return (
+        v.name.toLowerCase().includes(query) ||
+        (v.contact_person && v.contact_person.toLowerCase().includes(query)) ||
+        (v.email && v.email.toLowerCase().includes(query)) ||
+        (v.bank_name && v.bank_name.toLowerCase().includes(query)) ||
+        (v.account_no && v.account_no.toLowerCase().includes(query))
+      );
+    })
+    .sort((a, b) => {
+      const balA = Number(a.outstanding_payable_amount) || 0;
+      const balB = Number(b.outstanding_payable_amount) || 0;
+      if (balB !== balA) return balB - balA; // Highest balance first
+      return a.name.localeCompare(b.name);
+    });
 
   // Calculate stats
   const totalVendors = vendors.length;
   const vendorsWithBank = vendors.filter(v => v.account_no && v.bank_name).length;
   const activeVendorNames = new Set(payables.map(p => p.vendor_name).filter(Boolean));
   const activeVendors = vendors.filter(v => activeVendorNames.has(v.name)).length;
+  const totalZohoOutstanding = vendors.reduce((acc, v) => acc + (Number(v.outstanding_payable_amount) || 0), 0);
 
   // Open modal for Create/Edit
   const handleOpenModal = (vendor: Vendor | null = null) => {
@@ -362,8 +550,30 @@ function VendorsContent() {
     <AppLayout title="Vendor Directory" showMonthSelector={false}>
       <div className="space-y-6">
         
+        {/* Zoho Sync Notification Banner */}
+        {zohoSyncMessage && (
+          <div className={cn(
+            "p-3.5 rounded-xl border flex items-center justify-between text-xs transition-all",
+            zohoSyncMessage.type === 'success' 
+              ? "bg-emerald-50/80 border-emerald-200 text-emerald-800" 
+              : "bg-rose-50/80 border-rose-200 text-rose-800"
+          )}>
+            <div className="flex items-center gap-2">
+              {zohoSyncMessage.type === 'success' ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              )}
+              <span>{zohoSyncMessage.text}</span>
+            </div>
+            <button onClick={() => setZohoSyncMessage(null)} className="text-slate-400 hover:text-slate-700">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* KPI Summary Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm flex items-center gap-4">
             <div className="h-12 w-12 rounded-lg bg-indigo-50 border border-indigo-150 flex items-center justify-center text-indigo-650">
               <Building2 className="h-6 w-6" />
@@ -393,24 +603,86 @@ function VendorsContent() {
               <p className="text-2xl font-bold text-slate-850 mt-1">{activeVendors}</p>
             </div>
           </div>
+
+          <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm flex items-center gap-4">
+            <div className="h-12 w-12 rounded-lg bg-blue-50 border border-blue-150 flex items-center justify-center text-blue-650">
+              <Wallet className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Zoho Outstanding</p>
+              <p className="text-2xl font-bold text-slate-850 mt-1">
+                OMR {totalZohoOutstanding.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Filter and Actions Bar */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-          {/* Search */}
-          <div className="relative min-w-[280px] flex-1 md:flex-initial">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search vendors by name, bank details, or contact..."
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500"
-            />
+          {/* Search & Balance Filters */}
+          <div className="flex flex-wrap items-center gap-3 flex-1">
+            <div className="relative min-w-[280px] flex-1 md:flex-initial">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search vendors by name, bank details, or contact..."
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500"
+              />
+            </div>
+            
+            {/* Quick Balance Filter */}
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setBalanceFilter('all')}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
+                  balanceFilter === 'all'
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                All ({vendors.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setBalanceFilter('with_balance')}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-semibold transition-colors flex items-center gap-1",
+                  balanceFilter === 'with_balance'
+                    ? "bg-white text-rose-700 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                <span>With Balance ({vendors.filter(v => Number(v.outstanding_payable_amount) > 0).length})</span>
+              </button>
+            </div>
           </div>
 
           {/* Actions */}
           <div className="flex items-center flex-wrap gap-2">
+            {zohoConfigured === false ? (
+              <a
+                href="/api/zoho/authorize"
+                className="flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors cursor-pointer"
+                title="Connect your Zoho Books account with 1-click approval"
+              >
+                <Zap className="h-3.5 w-3.5 text-amber-300" />
+                <span>Connect Zoho Books</span>
+              </a>
+            ) : (
+              <button
+                onClick={handleZohoSync}
+                disabled={zohoSyncing}
+                className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100/70 transition-colors cursor-pointer disabled:opacity-50"
+                title="Sync vendor balances and unpaid bills from Zoho Books"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5 text-blue-600", zohoSyncing && "animate-spin")} />
+                <span>{zohoSyncing ? 'Syncing...' : 'Sync Zoho Books'}</span>
+              </button>
+            )}
             <button
               onClick={() => setIsImportModalOpen(true)}
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
@@ -449,6 +721,7 @@ function VendorsContent() {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                     <th className="py-3 px-6">Vendor Name</th>
+                    <th className="py-3 px-6">Zoho Balance</th>
                     <th className="py-3 px-6">Bank Type</th>
                     <th className="py-3 px-6">Contact Person</th>
                     <th className="py-3 px-6">Contact Info</th>
@@ -462,7 +735,28 @@ function VendorsContent() {
                   {filteredVendors.map((vendor) => (
                     <tr key={vendor.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-3.5 px-6 font-semibold text-slate-900 truncate max-w-[200px]" title={vendor.name}>
-                        {vendor.name}
+                        <div>
+                          {vendor.name}
+                          {vendor.zoho_contact_id && (
+                            <span className="block text-[10px] text-blue-600 font-normal">
+                              Zoho ID: {vendor.zoho_contact_id}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-6 font-semibold">
+                        {vendor.outstanding_payable_amount !== undefined && vendor.outstanding_payable_amount !== null ? (
+                          <span className={cn(
+                            "inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-bold",
+                            Number(vendor.outstanding_payable_amount) > 0
+                              ? "bg-rose-50 text-rose-700 border border-rose-200/60"
+                              : "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                          )}>
+                            OMR {Number(vendor.outstanding_payable_amount).toFixed(3)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-normal">—</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-6">
                         <span className={cn(
@@ -512,6 +806,18 @@ function VendorsContent() {
                       </td>
                       <td className="py-3.5 px-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenMatchModal(vendor)}
+                            className={cn(
+                              "rounded p-1.5 transition-colors",
+                              vendor.zoho_contact_id 
+                                ? "text-blue-600 hover:bg-blue-50" 
+                                : "text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+                            )}
+                            title={vendor.zoho_contact_id ? "Rematch / Unlink Zoho Vendor" : "Match with Zoho Vendor"}
+                          >
+                            <Link2 className="h-4.5 w-4.5" />
+                          </button>
                           <button
                             onClick={() => handleOpenModal(vendor)}
                             className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-indigo-655 transition-colors"
@@ -1074,6 +1380,176 @@ function VendorsContent() {
                     </>
                   )}
                 </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* Match with Zoho Modal */}
+        {isMatchModalOpen && matchingVendor && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div 
+              onClick={() => { if (!savingMatch) setIsMatchModalOpen(false); }}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" 
+            />
+
+            <div className="relative w-full max-w-2xl bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transition-all duration-200">
+              
+              {/* Header */}
+              <div className="px-6 py-5 border-b border-slate-150 flex items-center justify-between shrink-0 bg-slate-50/50">
+                <div>
+                  <h3 className="text-md font-bold text-slate-900 font-sans flex items-center gap-2">
+                    <Link2 className="h-5 w-5 text-blue-600" />
+                    Match & Link Zoho Books Vendor
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Linking local vendor <strong className="text-slate-800 font-semibold">&quot;{matchingVendor.name}&quot;</strong> with their Zoho Books profile.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsMatchModalOpen(false)}
+                  disabled={savingMatch}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+                
+                {/* Current Status Card */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Linked Status</span>
+                    <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                      {matchingVendor.zoho_contact_id ? (
+                        <span className="text-blue-700 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          Linked (Zoho Contact ID: {matchingVendor.zoho_contact_id})
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">Not linked to Zoho Books</span>
+                      )}
+                    </p>
+                    {matchingVendor.outstanding_payable_amount !== undefined && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Current Outstanding Balance: <strong className="text-slate-900">OMR {Number(matchingVendor.outstanding_payable_amount).toFixed(3)}</strong>
+                      </p>
+                    )}
+                  </div>
+                  {matchingVendor.zoho_contact_id && (
+                    <button
+                      onClick={handleUnlinkVendor}
+                      disabled={savingMatch}
+                      className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors flex items-center gap-1.5"
+                    >
+                      <Unlink className="h-3.5 w-3.5" />
+                      Unlink
+                    </button>
+                  )}
+                </div>
+
+                {/* Search in Zoho Contacts */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+                    Search Zoho Books Contacts
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={zohoSearchQuery}
+                      onChange={(e) => setZohoSearchQuery(e.target.value)}
+                      placeholder="Type vendor name to search Zoho list..."
+                      className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Zoho Contacts Results */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
+                  {fetchingZohoContacts ? (
+                    <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2 text-xs">
+                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> Loading Zoho contacts...
+                    </div>
+                  ) : (
+                    (() => {
+                      const q = zohoSearchQuery.toLowerCase().trim();
+                      const filtered = zohoContactsList.filter(zc => {
+                        const name = (zc.company_name || zc.name || zc.contact_name || '').toLowerCase();
+                        const cid = (zc.contact_id || zc.zoho_contact_id || '').toLowerCase();
+                        return name.includes(q) || cid.includes(q);
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-slate-400 text-xs">
+                            No matching Zoho contacts found. Try a different search keyword.
+                          </div>
+                        );
+                      }
+
+                      return filtered.map((zc) => {
+                        const contactName = zc.company_name || zc.name || zc.contact_name;
+                        const contactId = zc.contact_id || zc.zoho_contact_id;
+                        const bal = Number(zc.outstanding_payable_amount || zc.balance || 0);
+                        const isCurrent = matchingVendor.zoho_contact_id === contactId;
+
+                        return (
+                          <div key={contactId} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-4 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-slate-900 truncate">
+                                {contactName}
+                              </p>
+                              <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-0.5">
+                                <span>ID: <strong className="font-mono text-slate-700">{contactId}</strong></span>
+                                <span>•</span>
+                                <span className={cn(
+                                  "font-mono font-semibold",
+                                  bal > 0 ? "text-rose-600" : "text-emerald-600"
+                                )}>
+                                  Balance: OMR {bal.toFixed(3)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div>
+                              {isCurrent ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                                  <Check className="h-3.5 w-3.5" /> Linked
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleLinkVendor(zc)}
+                                  disabled={savingMatch}
+                                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 shadow-sm transition-colors cursor-pointer flex items-center gap-1"
+                                >
+                                  {savingMatch ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                                  Match & Link
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()
+                  )}
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-150 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsMatchModalOpen(false)}
+                  disabled={savingMatch}
+                  className="rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-100"
+                >
+                  Close
+                </button>
               </div>
 
             </div>
