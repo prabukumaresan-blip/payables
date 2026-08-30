@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getZohoConfig } from '@/lib/zoho/client';
+import { getZohoConfig, getZohoRedirectUri } from '@/lib/zoho/client';
 
 export async function GET(req: NextRequest) {
   const config = getZohoConfig();
-  const host = req.headers.get('host') || 'localhost:3000';
-  const protocol = req.headers.get('x-forwarded-proto') || 'http';
-  const redirectUri = `${protocol}://${host}/api/zoho/callback`;
+  const redirectUri = getZohoRedirectUri(req);
 
   if (!config.clientId) {
     return NextResponse.json(

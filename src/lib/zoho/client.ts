@@ -81,8 +81,26 @@ export function getZohoConfig() {
     refreshToken: process.env.ZOHO_REFRESH_TOKEN || fallback.ZOHO_REFRESH_TOKEN || '',
     organizationId: process.env.ZOHO_ORGANIZATION_ID || fallback.ZOHO_ORGANIZATION_ID || '771750431',
     accountsUrl: process.env.ZOHO_ACCOUNTS_URL || fallback.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.com',
-    apiUrl: process.env.ZOHO_API_URL || fallback.ZOHO_API_URL || 'https://www.zohoapis.com/books/v3'
+    apiUrl: process.env.ZOHO_API_URL || fallback.ZOHO_API_URL || 'https://www.zohoapis.com/books/v3',
+    redirectUri: process.env.ZOHO_REDIRECT_URI || fallback.ZOHO_REDIRECT_URI || ''
   };
+}
+
+export function getZohoRedirectUri(req?: { headers: { get: (name: string) => string | null } }): string {
+  const config = getZohoConfig();
+  if (config.redirectUri) {
+    return config.redirectUri;
+  }
+
+  if (req) {
+    const forwardedProto = req.headers.get('x-forwarded-proto');
+    const forwardedHost = req.headers.get('x-forwarded-host');
+    const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
+    const protocol = forwardedProto || (host.includes('localhost') ? 'http' : 'https');
+    return `${protocol}://${host}/api/zoho/callback`;
+  }
+
+  return 'https://payables-olive.vercel.app/api/zoho/callback';
 }
 
 /**
