@@ -116,8 +116,14 @@ export async function POST(req: NextRequest) {
         .select('*');
       const existingPayablesList = existingPayablesData || [];
 
-      // Batch Prepare Bills for Upsert
-      payablesToUpsert = zohoBills
+      // Map unpaid Zoho bills by bill_id
+      const unpaidZohoBillsMap = new Map<string, typeof zohoBills[0]>();
+      zohoBills.forEach(b => {
+        if (b.bill_id) unpaidZohoBillsMap.set(b.bill_id, b);
+      });
+
+      // A. Upsert currently unpaid or partially paid bills
+      const activeZohoPayables = zohoBills
         .filter((bill) => bill.bill_id && bill.balance > 0)
         .map((bill) => {
           const dueDateStr = bill.due_date || bill.date || format(new Date(), 'yyyy-MM-dd');
@@ -131,18 +137,22 @@ export async function POST(req: NextRequest) {
           );
 
           const notesTag = `[ZOHO_BILL:${bill.bill_id}] ${bill.notes || `Imported from Zoho Books Bill #${bill.bill_number}`}`;
+          const isOverdue = new Date(dueDateStr) < new Date();
+          const isPartial = bill.balance < bill.total && bill.balance > 0;
+          const status = isPartial ? 'partial' : (isOverdue ? 'overdue' : 'pending');
+          const paidAmount = bill.total > bill.balance ? Number((bill.total - bill.balance).toFixed(3)) : 0;
 
           const item: any = {
             id: match ? match.id : crypto.randomUUID(),
             title: `Bill #${bill.bill_number} - ${bill.vendor_name}`,
-            category_id: 'cat-1', // Vendor Payment
+            category_id: match?.category_id || 'cat-1', // Vendor Payment
             vendor_name: bill.vendor_name,
-            amount: bill.balance,
+            amount: bill.total || bill.balance,
             currency: bill.currency_code || 'OMR',
             due_date: dueDateStr,
             month_year: monthYear,
-            status: 'pending',
-            paid_amount: 0,
+            status: status,
+            paid_amount: paidAmount,
             recurrence: 'once',
             reference_no: bill.bill_number,
             notes: notesTag,
@@ -152,6 +162,23 @@ export async function POST(req: NextRequest) {
 
           return item;
         });
+
+      // B. Identify any previously imported Zoho payables that are NO LONGER in unpaid bills (i.e. Paid in Zoho)
+      const settledZohoPayables = existingPayablesList
+        .filter((p: any) => {
+          const zohoMatch = p.notes?.match(/\[ZOHO_BILL:([a-zA-Z0-9_-]+)\]/);
+          const zohoBillId = p.zoho_bill_id || (zohoMatch ? zohoMatch[1] : null);
+          return zohoBillId && !unpaidZohoBillsMap.has(zohoBillId) && p.status !== 'paid';
+        })
+        .map((p: any) => ({
+          ...p,
+          status: 'paid',
+          paid_amount: p.amount,
+          payment_date: p.payment_date || now.substring(0, 10),
+          updated_at: now
+        }));
+
+      payablesToUpsert = [...activeZohoPayables, ...settledZohoPayables];
 
       // Batch Upsert Payables in chunks of 100
       for (let i = 0; i < payablesToUpsert.length; i += 100) {

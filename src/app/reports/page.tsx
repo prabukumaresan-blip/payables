@@ -6,8 +6,8 @@ import Papa from 'papaparse';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import AppLayout from '@/components/layout/AppLayout';
-import { getReports, getCategories } from '@/lib/supabase/queries';
-import { Payable, Category } from '@/lib/supabase/mockDb';
+import { getReports, getCategories, getVendors } from '@/lib/supabase/queries';
+import { Payable, Category, Vendor } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
 import { getMonthsList } from '@/lib/utils/dates';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
@@ -20,7 +20,9 @@ import {
   Clock,
   ArrowRight,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Suspense } from 'react';
@@ -32,8 +34,11 @@ function ReportsContent() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [syncingZoho, setSyncingZoho] = useState(false);
+  const [zohoSyncMessage, setZohoSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [consolidateByVendor, setConsolidateByVendor] = useState(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
@@ -43,17 +48,49 @@ function ReportsContent() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const cats = await getCategories();
+      const [cats, vList] = await Promise.all([
+        getCategories(),
+        getVendors()
+      ]);
       const start = startMonth < endMonth ? startMonth : endMonth;
       const end = startMonth < endMonth ? endMonth : startMonth;
       
       const list = await getReports(start, end);
       setCategories(cats);
+      setVendors(vList);
       setPayables(list);
     } catch (e) {
       console.error('Error loading reports:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleZohoSync = async () => {
+    setSyncingZoho(true);
+    setZohoSyncMessage(null);
+    try {
+      const res = await fetch('/api/zoho/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setZohoSyncMessage({
+          type: 'success',
+          text: `Synced ${data.data.updatedVendorsCount} vendors and ${data.data.syncedBillsCount} bills from Zoho Books.`
+        });
+        await loadData();
+      } else {
+        setZohoSyncMessage({
+          type: 'error',
+          text: `Zoho Sync failed: ${data.error}`
+        });
+      }
+    } catch (err: any) {
+      setZohoSyncMessage({
+        type: 'error',
+        text: `Zoho Sync error: ${err.message}`
+      });
+    } finally {
+      setSyncingZoho(false);
     }
   };
 
@@ -721,8 +758,17 @@ function ReportsContent() {
             </div>
           </div>
 
-          {/* Export Actions */}
+          {/* Export & Sync Actions */}
           <div className="flex items-center flex-wrap gap-2">
+            <button
+              onClick={handleZohoSync}
+              disabled={syncingZoho}
+              className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100/70 disabled:opacity-50 cursor-pointer transition-colors shadow-sm"
+              title="Sync vendor balances and bills with Zoho Books"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5 text-blue-600", syncingZoho && "animate-spin")} />
+              <span>{syncingZoho ? 'Syncing...' : 'Sync Zoho'}</span>
+            </button>
             <button
               onClick={handleExportExcel}
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
@@ -746,6 +792,31 @@ function ReportsContent() {
             </button>
           </div>
         </div>
+
+        {/* Zoho Sync Message Banner */}
+        {zohoSyncMessage && (
+          <div className={cn(
+            "p-3 rounded-xl border text-xs font-semibold flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 duration-300",
+            zohoSyncMessage.type === 'success' 
+              ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
+              : "bg-rose-50 text-rose-800 border-rose-200"
+          )}>
+            <div className="flex items-center gap-2">
+              {zohoSyncMessage.type === 'success' ? (
+                <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+              )}
+              <span>{zohoSyncMessage.text}</span>
+            </div>
+            <button 
+              onClick={() => setZohoSyncMessage(null)}
+              className="text-slate-400 hover:text-slate-700 ml-4 font-bold text-sm cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Detailed Document Container (LIGHT THEME) */}
         <div 
@@ -1016,41 +1087,54 @@ function ReportsContent() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 text-slate-700">
-                            {catVendors.map((v, idx) => (
-                              <tr key={v.name} className="hover:bg-slate-50/60 transition-colors">
-                                <td className="py-2.5 px-3 text-slate-400 font-numeric">{idx + 1}</td>
-                                <td className="py-2.5 px-3 font-bold text-slate-900 text-xs">{v.name}</td>
-                                <td className="py-2.5 px-3 text-center font-numeric text-slate-600">{v.totalCount}</td>
-                                <td className="py-2.5 px-3 text-right font-numeric text-slate-800">{formatOMR(v.totalAmount)}</td>
-                                <td className="py-2.5 px-3 text-right font-numeric text-emerald-600 font-medium">{formatOMR(v.paidAmount)}</td>
-                                <td className="py-2.5 px-3 text-right font-numeric font-bold">
-                                  {v.pendingAmount > 0 ? (
-                                    <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200/60 font-mono">
-                                      {formatOMR(v.pendingAmount)}
-                                    </span>
-                                  ) : (
-                                    <span className="text-emerald-600 font-mono">
-                                      {formatOMR(0)}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  {v.pendingAmount <= 0 ? (
-                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                      Fully Paid
-                                    </span>
-                                  ) : v.paidAmount > 0 ? (
-                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
-                                      Partially Paid
-                                    </span>
-                                  ) : (
-                                    <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-rose-50 text-rose-700 border border-rose-200">
-                                      Outstanding
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
+                            {catVendors.map((v, idx) => {
+                              const vMatch = vendors.find(vend => vend.name.toLowerCase().trim() === v.name.toLowerCase().trim());
+                              const hasCredits = Number(vMatch?.unused_credits_payable_amount || 0) > 0;
+
+                              return (
+                                <tr key={v.name} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="py-2.5 px-3 text-slate-400 font-numeric">{idx + 1}</td>
+                                  <td className="py-2.5 px-3">
+                                    <span className="font-bold text-slate-900 text-xs block">{v.name}</span>
+                                    {hasCredits && (
+                                      <span className="inline-flex items-center gap-1 mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <Zap className="h-2.5 w-2.5 text-emerald-600" />
+                                        Zoho Advance Credit: OMR {formatOMR(vMatch!.unused_credits_payable_amount!)}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-numeric text-slate-600">{v.totalCount}</td>
+                                  <td className="py-2.5 px-3 text-right font-numeric text-slate-800">{formatOMR(v.totalAmount)}</td>
+                                  <td className="py-2.5 px-3 text-right font-numeric text-emerald-600 font-medium">{formatOMR(v.paidAmount)}</td>
+                                  <td className="py-2.5 px-3 text-right font-numeric font-bold">
+                                    {v.pendingAmount > 0 ? (
+                                      <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200/60 font-mono">
+                                        {formatOMR(v.pendingAmount)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-600 font-mono">
+                                        {formatOMR(0)}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    {v.pendingAmount <= 0 ? (
+                                      <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Fully Settled
+                                      </span>
+                                    ) : v.paidAmount > 0 ? (
+                                      <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                                        Partially Paid
+                                      </span>
+                                    ) : (
+                                      <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold uppercase bg-rose-50 text-rose-700 border border-rose-200">
+                                        Outstanding
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                           <tfoot>
                             <tr className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
