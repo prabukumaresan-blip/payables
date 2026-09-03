@@ -20,6 +20,64 @@ export default function TopBar({ title, showMonthSelector = true, onMenuClick }:
   const currentMonth = searchParams.get('month') || format(new Date(), 'yyyy-MM');
   const months = getMonthsList(12);
 
+  const [zohoStatus, setZohoStatus] = React.useState<{
+    configured: boolean;
+    syncing: boolean;
+    lastSynced?: string;
+    message?: string;
+  }>({
+    configured: true,
+    syncing: false
+  });
+
+  const checkZohoStatus = async () => {
+    try {
+      const res = await fetch('/api/zoho/status');
+      const data = await res.json();
+      setZohoStatus(prev => ({
+        ...prev,
+        configured: Boolean(data.configured)
+      }));
+    } catch (e) {
+      console.warn('Failed to fetch Zoho status:', e);
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (zohoStatus.syncing) return;
+    setZohoStatus(prev => ({ ...prev, syncing: true, message: undefined }));
+    try {
+      const res = await fetch('/api/zoho/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        const timeStr = format(new Date(), 'hh:mm a');
+        setZohoStatus(prev => ({
+          ...prev,
+          syncing: false,
+          lastSynced: timeStr,
+          message: `Synced ${data.data?.syncedBillsCount || 0} bills & ${data.data?.totalZohoVendors || 0} vendors`
+        }));
+        router.refresh();
+      } else {
+        setZohoStatus(prev => ({
+          ...prev,
+          syncing: false,
+          message: data.error || 'Sync failed'
+        }));
+      }
+    } catch (err: any) {
+      setZohoStatus(prev => ({
+        ...prev,
+        syncing: false,
+        message: err.message || 'Sync network error'
+      }));
+    }
+  };
+
+  React.useEffect(() => {
+    checkZohoStatus();
+  }, []);
+
   const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newMonth = e.target.value;
     const params = new URLSearchParams(searchParams.toString());
@@ -45,8 +103,32 @@ export default function TopBar({ title, showMonthSelector = true, onMenuClick }:
         </h1>
       </div>
 
-      {/* Primary Global Filter: Month Picker */}
-      <div className="flex items-center gap-4">
+      {/* Global Actions: Zoho Sync Status & Month Picker */}
+      <div className="flex items-center gap-3">
+        {/* Zoho Sync Live Status Indicator */}
+        <div className="hidden md:flex items-center gap-2">
+          <button
+            onClick={handleManualSync}
+            disabled={zohoStatus.syncing}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+              zohoStatus.syncing 
+                ? 'bg-blue-50 border-blue-200 text-blue-700' 
+                : 'bg-emerald-50/80 border-emerald-200/80 text-emerald-800 hover:bg-emerald-100/80 cursor-pointer shadow-xs'
+            }`}
+            title="Default: Bank Muscat Corparate Account (3095712000000075328)"
+          >
+            <span className={`h-2 w-2 rounded-full ${zohoStatus.syncing ? 'bg-blue-500 animate-ping' : 'bg-emerald-500'}`} />
+            <span className="font-bold tracking-wide">Zoho Books:</span>
+            <span>{zohoStatus.syncing ? 'Syncing...' : (zohoStatus.lastSynced ? `Synced at ${zohoStatus.lastSynced}` : 'Active (Bank Muscat)')}</span>
+          </button>
+          {zohoStatus.message && (
+            <span className="text-[11px] text-slate-500 italic max-w-[200px] truncate" title={zohoStatus.message}>
+              {zohoStatus.message}
+            </span>
+          )}
+        </div>
+
+        {/* Primary Global Filter: Month Picker */}
         {showMonthSelector && (
           <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 transition-colors focus-within:border-indigo-500">
             <Calendar className="h-4 w-4 text-indigo-600" />

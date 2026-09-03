@@ -38,7 +38,7 @@ export async function getPayables(
     // Fetch items for the current month OR previous items that are unpaid (pending or overdue)
     let query = supabase
       .from('payables')
-      .select('*, category:categories(*), pdc:pdcs(*), loan:loan_schedule(*)')
+      .select('*, category:categories(*), pdc:pdcs(*), loan:loan_schedule(*), payments:payment_history(*)')
       .or(`month_year.eq.${monthYear},and(month_year.lt.${monthYear},status.in.(pending,overdue,partial))`);
 
     if (filters.categoryId && filters.categoryId !== 'all') {
@@ -52,7 +52,22 @@ export async function getPayables(
     }
 
     const { data, error } = await query;
-    if (!error && data) return data;
+    if (!error && data) {
+      return data.map((p: any) => {
+        const mappedPayments = (p.payments || []).map((item: any) => {
+          let zohoPaymentId = item.zoho_payment_id || null;
+          if (!zohoPaymentId && item.notes) {
+            const match = item.notes.match(/\[ZOHO_PAYMENT:([a-zA-Z0-9_-]+)\]/);
+            if (match) zohoPaymentId = match[1];
+          }
+          return { ...item, zoho_payment_id: zohoPaymentId };
+        });
+        return {
+          ...p,
+          payments: mappedPayments
+        };
+      });
+    }
   }
 
   // Fallback to local storage mock

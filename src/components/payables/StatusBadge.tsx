@@ -164,8 +164,14 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
 
   const remainingBalance = Math.max(0, Number(payable.amount) - Number(payable.paid_amount || 0));
 
+  const hasZohoPayment = Boolean(
+    (payable.payments && payable.payments.some(p => Boolean(p.zoho_payment_id))) ||
+    (payable.notes && payable.notes.includes('[ZOHO_PAYMENT:')) ||
+    (payments.some(p => Boolean(p.zoho_payment_id)))
+  );
+
   return (
-    <div className="relative inline-block" ref={popoverRef}>
+    <div className="relative inline-flex items-center gap-1.5" ref={popoverRef}>
       {/* Badge Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -178,6 +184,17 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
         {payable.status === 'partial' && payable.paid_amount ? `partial (${Number(payable.paid_amount).toFixed(3)})` : payable.status}
         <ChevronDown className="h-3 w-3 opacity-60" />
       </button>
+
+      {/* Zoho Synced Status Pill */}
+      {hasZohoPayment && (
+        <span 
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider bg-blue-50 text-blue-700 border border-blue-200/80 shadow-2xs"
+          title="Synced to Zoho Books (Paid through Bank Muscat Corparate Account)"
+        >
+          <Zap className="h-2.5 w-2.5 text-blue-600 fill-blue-600" />
+          ZOHO
+        </span>
+      )}
 
       {/* Centered Modal Dropdown */}
       {isOpen && (

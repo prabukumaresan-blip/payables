@@ -72,15 +72,50 @@ export async function POST(req: NextRequest) {
     if (!targetVendorContactId && targetVendorName) {
       try {
         const zohoVendors = await fetchZohoVendors();
-        const searchName = targetVendorName.toLowerCase().trim();
-        const matchedZv = zohoVendors.find(
+        const rawSearch = targetVendorName.toLowerCase().trim();
+        
+        const normalize = (s: string) => (s || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, ' ')
+          .replace(/\b(llc|l\.l\.c|trading|co|company|corp|corporation|transport|equipments|for|petty|cash|services|est|establishment)\b/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        const normSearch = normalize(targetVendorName);
+
+        // 1. Exact match or direct substring
+        let matchedZv = zohoVendors.find(
           zv =>
-            zv.contact_name.toLowerCase().trim() === searchName ||
-            (zv.company_name && zv.company_name.toLowerCase().trim() === searchName) ||
-            zv.contact_name.toLowerCase().trim().includes(searchName) ||
-            (zv.company_name && zv.company_name.toLowerCase().trim().includes(searchName)) ||
-            searchName.includes(zv.contact_name.toLowerCase().trim())
+            zv.contact_name.toLowerCase().trim() === rawSearch ||
+            (zv.company_name && zv.company_name.toLowerCase().trim() === rawSearch) ||
+            zv.contact_name.toLowerCase().trim().includes(rawSearch) ||
+            (zv.company_name && zv.company_name.toLowerCase().trim().includes(rawSearch)) ||
+            rawSearch.includes(zv.contact_name.toLowerCase().trim()) ||
+            (zv.company_name && rawSearch.includes(zv.company_name.toLowerCase().trim()))
         );
+
+        // 2. Normalized token matching
+        if (!matchedZv && normSearch.length >= 3) {
+          matchedZv = zohoVendors.find(zv => {
+            const cNorm = normalize(zv.contact_name);
+            const compNorm = normalize(zv.company_name);
+            return (cNorm && (cNorm === normSearch || cNorm.includes(normSearch) || normSearch.includes(cNorm))) ||
+                   (compNorm && (compNorm === normSearch || compNorm.includes(normSearch) || normSearch.includes(compNorm)));
+          });
+        }
+
+        // 3. Significant keyword matching
+        if (!matchedZv) {
+          const keywords = normSearch.split(/\s+/).filter(k => k.length >= 4);
+          if (keywords.length > 0) {
+            matchedZv = zohoVendors.find(zv => {
+              const cNorm = normalize(zv.contact_name);
+              const compNorm = normalize(zv.company_name);
+              return keywords.every(k => cNorm.includes(k) || compNorm.includes(k));
+            });
+          }
+        }
+
         if (matchedZv) {
           targetVendorContactId = matchedZv.contact_id;
         }
