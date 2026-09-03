@@ -346,9 +346,8 @@ export async function recordZohoVendorPayment(
     description: params.notes || 'Payment recorded via Payables Tracker'
   };
 
-  if (params.paidThroughAccountId) {
-    payload.paid_through_account_id = params.paidThroughAccountId;
-  }
+  // Default paid_through_account_id to Bank Muscat Corparate Account (3095712000000075328) if not explicitly passed
+  payload.paid_through_account_id = params.paidThroughAccountId || '3095712000000075328';
 
   if (params.billId) {
     payload.bills = [

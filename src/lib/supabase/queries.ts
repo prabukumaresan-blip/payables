@@ -1052,7 +1052,19 @@ export async function getPaymentHistory(payableId: string): Promise<PaymentHisto
       .select('*')
       .eq('payable_id', payableId)
       .order('payment_date', { ascending: false });
-    if (!error && data) return data;
+    if (!error && data) {
+      return data.map((item: any) => {
+        let zohoPaymentId = item.zoho_payment_id || null;
+        if (!zohoPaymentId && item.notes) {
+          const match = item.notes.match(/\[ZOHO_PAYMENT:([a-zA-Z0-9_-]+)\]/);
+          if (match) zohoPaymentId = match[1];
+        }
+        return {
+          ...item,
+          zoho_payment_id: zohoPaymentId
+        };
+      });
+    }
   }
   const db = getMockDb();
   return (db.payment_history || [])
@@ -1139,8 +1151,15 @@ export async function addPaymentRecord(
     }
   }
 
+  // Embed Zoho payment tag in notes to preserve linkage safely in Supabase payment_history
+  let finalNotes = payment.notes || '';
+  if (zohoPaymentId && !finalNotes.includes(`[ZOHO_PAYMENT:${zohoPaymentId}]`)) {
+    finalNotes = `${finalNotes ? finalNotes + ' ' : ''}[ZOHO_PAYMENT:${zohoPaymentId}]`.trim();
+  }
+
   const newPayment: PaymentHistory = {
     ...payment,
+    notes: finalNotes || null,
     id: newId,
     zoho_payment_id: zohoPaymentId,
     zoho_synced_at: zohoSyncedAt,
@@ -1149,9 +1168,20 @@ export async function addPaymentRecord(
 
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
+    // Only pass existing columns in Supabase payment_history to prevent schema errors
+    const dbPayload = {
+      id: newPayment.id,
+      payable_id: newPayment.payable_id,
+      amount: newPayment.amount,
+      payment_date: newPayment.payment_date,
+      reference_no: newPayment.reference_no,
+      bank_account: newPayment.bank_account,
+      notes: newPayment.notes,
+      created_at: newPayment.created_at
+    };
     const { error: insertError } = await supabase
       .from('payment_history')
-      .insert(newPayment);
+      .insert(dbPayload);
     if (insertError) {
       console.error('Error inserting payment record:', insertError);
       throw insertError;
@@ -1212,15 +1242,32 @@ async function createRawPaymentRecord(payment: {
 }): Promise<PaymentHistory> {
   const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'pay-' + Math.random().toString(36).substr(2, 9);
   const now = new Date().toISOString();
+  
+  let finalNotes = payment.notes || '';
+  if (payment.zoho_payment_id && !finalNotes.includes(`[ZOHO_PAYMENT:${payment.zoho_payment_id}]`)) {
+    finalNotes = `${finalNotes ? finalNotes + ' ' : ''}[ZOHO_PAYMENT:${payment.zoho_payment_id}]`.trim();
+  }
+
   const newPayment: PaymentHistory = {
     ...payment,
+    notes: finalNotes || null,
     id: newId,
     created_at: now
   };
 
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
-    const { error } = await supabase.from('payment_history').insert(newPayment);
+    const dbPayload = {
+      id: newPayment.id,
+      payable_id: newPayment.payable_id,
+      amount: newPayment.amount,
+      payment_date: newPayment.payment_date,
+      reference_no: newPayment.reference_no,
+      bank_account: newPayment.bank_account,
+      notes: newPayment.notes,
+      created_at: newPayment.created_at
+    };
+    const { error } = await supabase.from('payment_history').insert(dbPayload);
     if (error) {
       console.error('Error inserting raw payment record:', error);
       throw error;

@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       if (supabase) {
         const { data: payable } = await supabase
           .from('payables')
-          .select('*, vendor:vendors(*)')
+          .select('*')
           .eq('id', payable_id)
           .single();
 
@@ -64,40 +64,28 @@ export async function POST(req: NextRequest) {
               if (match) targetBillId = match[1];
             }
           }
-          if (!targetVendorContactId && payable.vendor?.zoho_contact_id) {
-            targetVendorContactId = payable.vendor.zoho_contact_id;
-          }
         }
       }
     }
 
     // If vendor contact ID is still not found, try matching by vendor name from Zoho vendors
     if (!targetVendorContactId && targetVendorName) {
-      if (supabase) {
-        const { data: v } = await supabase
-          .from('vendors')
-          .select('zoho_contact_id')
-          .ilike('name', targetVendorName.trim())
-          .single();
-        if (v?.zoho_contact_id) {
-          targetVendorContactId = v.zoho_contact_id;
+      try {
+        const zohoVendors = await fetchZohoVendors();
+        const searchName = targetVendorName.toLowerCase().trim();
+        const matchedZv = zohoVendors.find(
+          zv =>
+            zv.contact_name.toLowerCase().trim() === searchName ||
+            (zv.company_name && zv.company_name.toLowerCase().trim() === searchName) ||
+            zv.contact_name.toLowerCase().trim().includes(searchName) ||
+            (zv.company_name && zv.company_name.toLowerCase().trim().includes(searchName)) ||
+            searchName.includes(zv.contact_name.toLowerCase().trim())
+        );
+        if (matchedZv) {
+          targetVendorContactId = matchedZv.contact_id;
         }
-      }
-
-      if (!targetVendorContactId) {
-        try {
-          const zohoVendors = await fetchZohoVendors();
-          const matchedZv = zohoVendors.find(
-            zv =>
-              zv.contact_name.toLowerCase().trim() === targetVendorName.toLowerCase().trim() ||
-              (zv.company_name && zv.company_name.toLowerCase().trim() === targetVendorName.toLowerCase().trim())
-          );
-          if (matchedZv) {
-            targetVendorContactId = matchedZv.contact_id;
-          }
-        } catch (e) {
-          console.warn('Could not search Zoho vendors by name:', e);
-        }
+      } catch (e) {
+        console.warn('Could not search Zoho vendors by name:', e);
       }
     }
 
