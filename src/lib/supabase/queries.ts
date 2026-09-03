@@ -516,6 +516,13 @@ export async function deletePayable(id: string, deleteAllOccurrences: boolean = 
   const target = await getPayableById(id);
   if (!target) return false;
 
+  // Clean up payment history and void/delete linked Zoho Books payments
+  try {
+    await clearPaymentHistory(id);
+  } catch (e) {
+    console.warn('Error clearing payment history for deleted payable:', e);
+  }
+
   const baseTargetTitle = target.title.split(' - ')[0].trim();
 
   const db = getMockDb();
