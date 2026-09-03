@@ -121,6 +121,8 @@ export interface PaymentHistory {
   reference_no?: string | null;
   bank_account?: string | null;
   notes?: string | null;
+  zoho_payment_id?: string | null;
+  zoho_synced_at?: string | null;
   created_at?: string;
 }
 

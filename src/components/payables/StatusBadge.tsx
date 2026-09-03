@@ -5,7 +5,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Payable, PaymentHistory } from '@/lib/supabase/mockDb';
 import { updatePayableStatus, getPaymentHistory, addPaymentRecord, deletePaymentRecord } from '@/lib/supabase/queries';
-import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { formatOMR } from '@/lib/utils/formatCurrency';
@@ -379,6 +379,15 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
                                 <span className="text-[10px] text-slate-450 bg-slate-200/50 px-1.5 py-0.2 rounded font-numeric">
                                   {format(parseISO(p.payment_date), 'dd MMM yyyy')}
                                 </span>
+                                {p.zoho_payment_id && (
+                                  <span 
+                                    className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded-full" 
+                                    title={`Synced to Zoho Books (Payment #${p.zoho_payment_id})`}
+                                  >
+                                    <Zap className="h-2.5 w-2.5 text-blue-600" />
+                                    Zoho
+                                  </span>
+                                )}
                               </div>
                               {(p.reference_no || p.notes) && (
                                 <div className="text-[10px] text-slate-500 truncate max-w-[260px]">

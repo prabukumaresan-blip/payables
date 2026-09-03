@@ -308,3 +308,89 @@ export async function fetchZohoUnpaidBills(): Promise<ZohoBill[]> {
 
   return allBills;
 }
+
+export interface RecordZohoPaymentParams {
+  vendorId: string;
+  billId?: string | null;
+  amount: number;
+  paymentDate: string;
+  referenceNo?: string | null;
+  notes?: string | null;
+  paymentMode?: string;
+  paidThroughAccountId?: string;
+}
+
+export interface ZohoVendorPaymentResult {
+  payment_id: string;
+  payment_number?: string;
+  amount: number;
+  date: string;
+  vendor_id: string;
+  reference_number?: string;
+}
+
+/**
+ * Record a vendor payment in Zoho Books.
+ * If billId is provided, the payment is applied against the specific bill.
+ * Otherwise, it creates an advance/excess payment for the vendor in Zoho Books.
+ */
+export async function recordZohoVendorPayment(
+  params: RecordZohoPaymentParams
+): Promise<ZohoVendorPaymentResult> {
+  const payload: any = {
+    vendor_id: params.vendorId,
+    payment_mode: params.paymentMode || 'Bank Transfer',
+    date: params.paymentDate,
+    amount: Number(Number(params.amount).toFixed(3)),
+    reference_number: params.referenceNo || undefined,
+    description: params.notes || 'Payment recorded via Payables Tracker'
+  };
+
+  if (params.paidThroughAccountId) {
+    payload.paid_through_account_id = params.paidThroughAccountId;
+  }
+
+  if (params.billId) {
+    payload.bills = [
+      {
+        bill_id: params.billId,
+        amount_applied: Number(Number(params.amount).toFixed(3))
+      }
+    ];
+  }
+
+  const res = await zohoRequest<{
+    code: number;
+    message: string;
+    vendorpayment?: any;
+    payment?: any;
+  }>('/vendorpayments', 'POST', payload);
+
+  const paymentData = res.vendorpayment || res.payment || {};
+
+  return {
+    payment_id: paymentData.payment_id || paymentData.vendorpayment_id || '',
+    payment_number: paymentData.payment_number || '',
+    amount: Number(paymentData.amount || params.amount),
+    date: paymentData.date || params.paymentDate,
+    vendor_id: paymentData.vendor_id || params.vendorId,
+    reference_number: paymentData.reference_number || params.referenceNo || undefined
+  };
+}
+
+/**
+ * Delete a vendor payment in Zoho Books
+ */
+export async function deleteZohoVendorPayment(paymentId: string): Promise<boolean> {
+  if (!paymentId) return false;
+  try {
+    const res = await zohoRequest<{
+      code: number;
+      message: string;
+    }>(`/vendorpayments/${paymentId}`, 'DELETE');
+    return res.code === 0;
+  } catch (err: any) {
+    console.error(`Failed to delete Zoho payment ${paymentId}:`, err);
+    throw err;
+  }
+}

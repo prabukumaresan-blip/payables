@@ -1060,14 +1060,90 @@ export async function getPaymentHistory(payableId: string): Promise<PaymentHisto
     .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
 }
 
+/**
+ * Helper to dispatch vendor payment creation to Zoho Books in background/online mode
+ */
+export async function syncVendorPaymentToZoho(params: {
+  payableId: string;
+  amount: number;
+  paymentDate: string;
+  referenceNo?: string | null;
+  notes?: string | null;
+}): Promise<{ zoho_payment_id?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/zoho/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        payable_id: params.payableId,
+        amount: params.amount,
+        payment_date: params.paymentDate,
+        reference_no: params.referenceNo,
+        notes: params.notes
+      })
+    });
+    const data = await res.json();
+    if (data.success && data.data?.zoho_payment_id) {
+      return { zoho_payment_id: data.data.zoho_payment_id };
+    } else {
+      return { error: data.error || 'Failed to sync with Zoho Books' };
+    }
+  } catch (err: any) {
+    return { error: err.message || 'Network error syncing with Zoho Books' };
+  }
+}
+
+/**
+ * Helper to delete vendor payment from Zoho Books
+ */
+export async function deleteVendorPaymentFromZoho(zohoPaymentId: string): Promise<boolean> {
+  if (!zohoPaymentId) return false;
+  try {
+    const res = await fetch(`/api/zoho/payments?payment_id=${encodeURIComponent(zohoPaymentId)}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    return Boolean(data.success);
+  } catch (err) {
+    console.warn('Failed to delete payment from Zoho Books:', err);
+    return false;
+  }
+}
+
 export async function addPaymentRecord(
-  payment: Omit<PaymentHistory, 'id' | 'created_at'>
+  payment: Omit<PaymentHistory, 'id' | 'created_at'>,
+  options: { syncZoho?: boolean } = { syncZoho: true }
 ): Promise<Payable> {
   const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'pay-' + Math.random().toString(36).substr(2, 9);
   const now = new Date().toISOString();
+  
+  let zohoPaymentId = payment.zoho_payment_id || null;
+  let zohoSyncedAt = payment.zoho_synced_at || null;
+
+  // If syncZoho is true and not already provided, attempt sync with Zoho Books
+  if (options.syncZoho !== false && !zohoPaymentId && typeof window !== 'undefined') {
+    try {
+      const zohoRes = await syncVendorPaymentToZoho({
+        payableId: payment.payable_id,
+        amount: payment.amount,
+        paymentDate: payment.payment_date,
+        referenceNo: payment.reference_no,
+        notes: payment.notes
+      });
+      if (zohoRes.zoho_payment_id) {
+        zohoPaymentId = zohoRes.zoho_payment_id;
+        zohoSyncedAt = now;
+      }
+    } catch (e) {
+      console.warn('Zoho payment sync skipped or failed:', e);
+    }
+  }
+
   const newPayment: PaymentHistory = {
     ...payment,
     id: newId,
+    zoho_payment_id: zohoPaymentId,
+    zoho_synced_at: zohoSyncedAt,
     created_at: now
   };
 
@@ -1090,6 +1166,14 @@ export async function addPaymentRecord(
 }
 
 export async function deletePaymentRecord(paymentId: string, payableId: string): Promise<Payable> {
+  // Check if there is an associated zoho_payment_id to remove from Zoho Books
+  let targetZohoPaymentId: string | null = null;
+  const history = await getPaymentHistory(payableId);
+  const targetPayment = history.find(p => p.id === paymentId);
+  if (targetPayment?.zoho_payment_id) {
+    targetZohoPaymentId = targetPayment.zoho_payment_id;
+  }
+
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
     const { error: deleteError } = await supabase
@@ -1106,6 +1190,13 @@ export async function deletePaymentRecord(paymentId: string, payableId: string):
     saveMockPaymentHistory(filtered);
   }
 
+  // Delete from Zoho Books asynchronously
+  if (targetZohoPaymentId && typeof window !== 'undefined') {
+    deleteVendorPaymentFromZoho(targetZohoPaymentId).catch(err => {
+      console.warn('Error deleting payment in Zoho:', err);
+    });
+  }
+
   return recalculatePayableStatusAndPaidAmount(payableId);
 }
 
@@ -1116,6 +1207,8 @@ async function createRawPaymentRecord(payment: {
   reference_no?: string | null;
   bank_account?: string | null;
   notes?: string | null;
+  zoho_payment_id?: string | null;
+  zoho_synced_at?: string | null;
 }): Promise<PaymentHistory> {
   const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'pay-' + Math.random().toString(36).substr(2, 9);
   const now = new Date().toISOString();
@@ -1142,6 +1235,8 @@ async function createRawPaymentRecord(payment: {
 }
 
 async function clearPaymentHistory(payableId: string): Promise<void> {
+  const existingPayments = await getPaymentHistory(payableId);
+
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
     const { error } = await supabase.from('payment_history').delete().eq('payable_id', payableId);
@@ -1153,6 +1248,15 @@ async function clearPaymentHistory(payableId: string): Promise<void> {
     const db = getMockDb();
     const filtered = (db.payment_history || []).filter((ph) => ph.payable_id !== payableId);
     saveMockPaymentHistory(filtered);
+  }
+
+  // Also clean up any Zoho payments linked to this payable
+  if (typeof window !== 'undefined') {
+    for (const p of existingPayments) {
+      if (p.zoho_payment_id) {
+        deleteVendorPaymentFromZoho(p.zoho_payment_id).catch(() => {});
+      }
+    }
   }
 }
 
@@ -1174,11 +1278,30 @@ async function syncPaymentHistoryOnStatusChange(
     const diff = newAmount - sum;
     if (diff > 0) {
       const pDate = paymentDate || format(new Date(), 'yyyy-MM-dd');
+      let zohoPaymentId: string | null = null;
+      let zohoSyncedAt: string | null = null;
+      if (typeof window !== 'undefined') {
+        try {
+          const zohoRes = await syncVendorPaymentToZoho({
+            payableId,
+            amount: diff,
+            paymentDate: pDate,
+            notes: 'Full payment status update'
+          });
+          if (zohoRes.zoho_payment_id) {
+            zohoPaymentId = zohoRes.zoho_payment_id;
+            zohoSyncedAt = new Date().toISOString();
+          }
+        } catch (e) {}
+      }
+
       await createRawPaymentRecord({
         payable_id: payableId,
         amount: diff,
         payment_date: pDate,
-        notes: 'Full payment status update'
+        notes: 'Full payment status update',
+        zoho_payment_id: zohoPaymentId,
+        zoho_synced_at: zohoSyncedAt
       });
       finalPaidAmount = newAmount;
       finalPaymentDate = pDate;
@@ -1198,11 +1321,30 @@ async function syncPaymentHistoryOnStatusChange(
       if (Math.abs(diff) > 0.001) {
         await clearPaymentHistory(payableId);
         const pDate = paymentDate || format(new Date(), 'yyyy-MM-dd');
+        let zohoPaymentId: string | null = null;
+        let zohoSyncedAt: string | null = null;
+        if (typeof window !== 'undefined') {
+          try {
+            const zohoRes = await syncVendorPaymentToZoho({
+              payableId,
+              amount: newPaidAmount,
+              paymentDate: pDate,
+              notes: 'Status update sync'
+            });
+            if (zohoRes.zoho_payment_id) {
+              zohoPaymentId = zohoRes.zoho_payment_id;
+              zohoSyncedAt = new Date().toISOString();
+            }
+          } catch (e) {}
+        }
+
         await createRawPaymentRecord({
           payable_id: payableId,
           amount: newPaidAmount,
           payment_date: pDate,
-          notes: 'Status update sync'
+          notes: 'Status update sync',
+          zoho_payment_id: zohoPaymentId,
+          zoho_synced_at: zohoSyncedAt
         });
         finalPaidAmount = newPaidAmount;
         finalPaymentDate = pDate;
