@@ -10,6 +10,7 @@ import { getReports, getCategories, getVendors, getAllPayables } from '@/lib/sup
 import { Payable, Category, Vendor } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
 import { getMonthsList } from '@/lib/utils/dates';
+import { useCompany } from '@/context/CompanyContext';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { 
   Download, 
@@ -35,6 +36,7 @@ function ReportsContent() {
   const months = getMonthsList(24);
   const [startMonth, setStartMonth] = useState(months[5]?.value || format(new Date(), 'yyyy-MM'));
   const [endMonth, setEndMonth] = useState(months[0]?.value || format(new Date(), 'yyyy-MM'));
+  const { companies, selectedCompanyId, selectedCompany } = useCompany();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
@@ -49,6 +51,11 @@ function ReportsContent() {
   const [vendorSearchQuery, setVendorSearchQuery] = useState('');
   const [vendorBalanceFilter, setVendorBalanceFilter] = useState<'all' | 'with_balance' | 'with_credit' | 'settled'>('all');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  const [reportCompanyFilter, setReportCompanyFilter] = useState(selectedCompanyId || 'all');
+
+  useEffect(() => {
+    setReportCompanyFilter(selectedCompanyId || 'all');
+  }, [selectedCompanyId]);
 
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -57,12 +64,13 @@ function ReportsContent() {
     try {
       const start = startMonth < endMonth ? startMonth : endMonth;
       const end = startMonth < endMonth ? endMonth : startMonth;
+      const cFilter = reportCompanyFilter !== 'all' ? reportCompanyFilter : undefined;
       
       const [cats, vList, allPList, periodList] = await Promise.all([
         getCategories(),
         getVendors(),
-        getAllPayables(),
-        getReports(start, end)
+        getAllPayables({ companyId: cFilter }),
+        getReports(start, end, { companyId: cFilter })
       ]);
       
       setCategories(cats);
@@ -75,6 +83,10 @@ function ReportsContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, [startMonth, endMonth, reportCompanyFilter]);
 
   const handleZohoSync = async () => {
     setSyncingZoho(true);
@@ -1012,9 +1024,11 @@ function ReportsContent() {
                   <Building2 className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">Bright Flowers Trading LLC</h2>
+                  <h2 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                    {selectedCompany ? selectedCompany.name : 'All Companies Consolidated'}
+                  </h2>
                   <p className="text-xs text-indigo-600 font-semibold uppercase tracking-wider mt-0.5">
-                    Payables Report
+                    {selectedCompany?.cr_number ? `CR: ${selectedCompany.cr_number} • ` : ''}Payables Report
                   </p>
                 </div>
               </div>

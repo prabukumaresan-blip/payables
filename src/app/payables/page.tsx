@@ -44,6 +44,7 @@ import {
   MatchedPaymentResult
 } from '@/lib/utils/fileUtils';
 import PaymentApprovalModal, { PaymentApprovalData, ApprovalPaymentItem } from '@/components/payables/PaymentApprovalModal';
+import { useCompany } from '@/context/CompanyContext';
 import { cn } from '@/lib/utils';
 
 import { Suspense } from 'react';
@@ -51,6 +52,7 @@ import { Suspense } from 'react';
 function PayablesContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { companies, selectedCompanyId, selectedCompany, defaultBankAccount } = useCompany();
 
   // Filters State
   const selectedMonth = searchParams.get('month') || format(new Date(), 'yyyy-MM');
@@ -75,6 +77,7 @@ function PayablesContent() {
   const [approvalData, setApprovalData] = useState<PaymentApprovalData | null>(null);
 
   // Export fields
+  const [exportCompanyId, setExportCompanyId] = useState<string>('comp-1');
   const [debitAccount, setDebitAccount] = useState('0371024323360013');
   const [debitName, setDebitName] = useState('BRIGHT FLOWERS TRADING LLC');
   const [exportRemarks, setExportRemarks] = useState('PAYMENT');
@@ -84,7 +87,12 @@ function PayablesContent() {
 
   const [categoryIdFilter, setCategoryIdFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [companyFilter, setCompanyFilter] = useState<string>(selectedCompanyId || 'all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    setCompanyFilter(selectedCompanyId || 'all');
+  }, [selectedCompanyId]);
 
   // Bulk Selection
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -114,7 +122,8 @@ function PayablesContent() {
       const list = await getPayables(selectedMonth, {
         categoryId: categoryIdFilter,
         status: statusFilter,
-        search: searchQuery
+        search: searchQuery,
+        companyId: companyFilter !== 'all' ? companyFilter : undefined
       });
       setCategories(cats);
       setVendorsList(vList);
@@ -131,10 +140,24 @@ function PayablesContent() {
 
   useEffect(() => {
     loadData();
-  }, [selectedMonth, categoryIdFilter, statusFilter, searchQuery]);
+  }, [selectedMonth, categoryIdFilter, statusFilter, companyFilter, searchQuery]);
 
+  // Sync export debit fields whenever export modal opens
   useEffect(() => {
     if (isExportOpen) {
+      // Find company of selected payables or fallback to active company / first company
+      const selectedPayablesList = payables.filter(p => selectedIds.includes(p.id));
+      const targetCompany = (selectedPayablesList.length > 0 && selectedPayablesList[0].company_id)
+        ? (companies.find(c => c.id === selectedPayablesList[0].company_id) || companies[0])
+        : (selectedCompany || companies[0]);
+
+      if (targetCompany) {
+        setExportCompanyId(targetCompany.id);
+        const defAccount = targetCompany.bank_accounts?.find(a => a.is_default) || targetCompany.bank_accounts?.[0];
+        setDebitAccount(defAccount?.account_number || '');
+        setDebitName(targetCompany.name);
+      }
+
       const initialAmounts: Record<string, string> = {};
       payables.forEach(p => {
         if (selectedIds.includes(p.id)) {
@@ -144,7 +167,7 @@ function PayablesContent() {
       });
       setExportAmounts(initialAmounts);
     }
-  }, [isExportOpen, selectedIds, payables]);
+  }, [isExportOpen, selectedIds, payables, companies, selectedCompany]);
 
   // Handle Sort
   const handleSort = (field: keyof Payable) => {
@@ -627,6 +650,20 @@ function PayablesContent() {
                 className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500"
               />
             </div>
+
+            {/* Company Filter */}
+            <select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+            >
+              <option value="all">🏢 All Companies</option>
+              {companies.map((comp) => (
+                <option key={comp.id} value={comp.id}>
+                  {comp.short_name || comp.name}
+                </option>
+              ))}
+            </select>
 
             {/* Category Filter */}
             <select
@@ -1237,7 +1274,64 @@ function PayablesContent() {
                   )}
                 </div>
 
-                {/* Debit Bank Account number */}
+                {/* Company & Bank Selection */}
+                <div className="space-y-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                      <Building2 className="h-3 w-3 text-indigo-600" />
+                      Paying Company Entity <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={exportCompanyId}
+                      onChange={(e) => {
+                        const newCId = e.target.value;
+                        setExportCompanyId(newCId);
+                        const comp = companies.find(c => c.id === newCId);
+                        if (comp) {
+                          setDebitName(comp.name);
+                          const defAcc = comp.bank_accounts?.find(a => a.is_default) || comp.bank_accounts?.[0];
+                          if (defAcc) {
+                            setDebitAccount(defAcc.account_number);
+                          }
+                        }
+                      }}
+                      className="w-full mt-1 rounded-lg border border-slate-200 bg-white py-2 px-3 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500"
+                    >
+                      {companies.map((comp) => (
+                        <option key={comp.id} value={comp.id}>
+                          {comp.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Choose from company's configured bank accounts */}
+                  {(() => {
+                    const currentExportComp = companies.find(c => c.id === exportCompanyId);
+                    if (!currentExportComp || !currentExportComp.bank_accounts || currentExportComp.bank_accounts.length === 0) return null;
+                    return (
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                          <Landmark className="h-3 w-3 text-indigo-600" />
+                          Select Debit Bank Account ({currentExportComp.bank_accounts.length} available)
+                        </label>
+                        <select
+                          value={debitAccount}
+                          onChange={(e) => setDebitAccount(e.target.value)}
+                          className="w-full mt-1 rounded-lg border border-slate-200 bg-white py-2 px-3 text-xs font-mono font-semibold text-slate-800 outline-none focus:border-indigo-500"
+                        >
+                          {currentExportComp.bank_accounts.map((acc) => (
+                            <option key={acc.id} value={acc.account_number}>
+                              {acc.bank_name}: {acc.account_number} {acc.account_title ? `(${acc.account_title})` : ''} {acc.is_default ? '★ Default' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Debit Bank Account number (editable) */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                     Corporate Debit Account Number <span className="text-rose-500">*</span>
@@ -1247,7 +1341,7 @@ function PayablesContent() {
                     value={debitAccount}
                     onChange={(e) => setDebitAccount(e.target.value)}
                     placeholder="e.g. 0371024323360013"
-                    className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-855 outline-none focus:border-indigo-500 font-numeric"
+                    className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-855 outline-none focus:border-indigo-500 font-numeric font-bold"
                   />
                 </div>
 
@@ -1261,7 +1355,7 @@ function PayablesContent() {
                     value={debitName}
                     onChange={(e) => setDebitName(e.target.value)}
                     placeholder="e.g. BRIGHT FLOWERS TRADING LLC"
-                    className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-855 outline-none focus:border-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm text-slate-855 outline-none focus:border-indigo-500 font-semibold uppercase"
                   />
                 </div>
 

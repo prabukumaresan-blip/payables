@@ -3,8 +3,9 @@
 import React from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { getMonthsList } from '@/lib/utils/dates';
-import { Calendar, Search, Menu } from 'lucide-react';
+import { Calendar, Search, Menu, Building2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useCompany } from '@/context/CompanyContext';
 
 interface TopBarProps {
   title?: string;
@@ -19,6 +20,8 @@ export default function TopBar({ title, showMonthSelector = true, onMenuClick }:
 
   const currentMonth = searchParams.get('month') || format(new Date(), 'yyyy-MM');
   const months = getMonthsList(12);
+
+  const { companies, selectedCompanyId, selectedCompany, defaultBankAccount, setSelectedCompanyId } = useCompany();
 
   const [zohoStatus, setZohoStatus] = React.useState<{
     configured: boolean;
@@ -126,6 +129,29 @@ export default function TopBar({ title, showMonthSelector = true, onMenuClick }:
               {zohoStatus.message}
             </span>
           )}
+        </div>
+
+        {/* Company Switcher Dropdown */}
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 transition-colors focus-within:border-indigo-500 hover:bg-slate-100/70">
+          <Building2 className="h-4 w-4 text-indigo-600 shrink-0" />
+          <select
+            value={selectedCompanyId}
+            onChange={(e) => setSelectedCompanyId(e.target.value)}
+            className="bg-transparent text-xs font-semibold text-slate-800 outline-none cursor-pointer max-w-[160px] truncate"
+            title={selectedCompany ? `${selectedCompany.name} (Default: ${defaultBankAccount?.account_number || 'No Account'})` : 'All Companies'}
+          >
+            <option value="ALL" className="bg-white text-slate-800 font-semibold">
+              🏢 All Companies
+            </option>
+            {companies.map((c) => {
+              const defAcc = c.bank_accounts?.find(a => a.is_default) || c.bank_accounts?.[0];
+              return (
+                <option key={c.id} value={c.id} className="bg-white text-slate-800">
+                  {c.short_name || c.name} {defAcc ? `(${defAcc.bank_name})` : ''}
+                </option>
+              );
+            })}
+          </select>
         </div>
 
         {/* Primary Global Filter: Month Picker */}

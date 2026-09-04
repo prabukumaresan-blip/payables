@@ -10,6 +10,7 @@ import MonthlyTrendChart from '@/components/dashboard/MonthlyTrendChart';
 import { getPayables, getAllPayables, getCategories } from '@/lib/supabase/queries';
 import { Payable, Category } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
+import { useCompany } from '@/context/CompanyContext';
 import { 
   CreditCard, 
   CheckCircle, 
@@ -27,6 +28,7 @@ import { Suspense } from 'react';
 function DashboardContent() {
   const searchParams = useSearchParams();
   const selectedMonth = searchParams.get('month') || format(new Date(), 'yyyy-MM');
+  const { selectedCompanyId, selectedCompany } = useCompany();
 
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -37,9 +39,10 @@ function DashboardContent() {
     async function loadData() {
       setLoading(true);
       try {
+        const companyFilter = selectedCompanyId !== 'ALL' ? selectedCompanyId : undefined;
         const cats = await getCategories();
-        const curPayables = await getPayables(selectedMonth);
-        const all = await getAllPayables();
+        const curPayables = await getPayables(selectedMonth, { companyId: companyFilter });
+        const all = await getAllPayables({ companyId: companyFilter });
         
         setCategories(cats);
         setPayables(curPayables);
@@ -51,7 +54,7 @@ function DashboardContent() {
       }
     }
     loadData();
-  }, [selectedMonth]);
+  }, [selectedMonth, selectedCompanyId]);
 
   // Compute KPIs
   const totalPayablesAmount = payables.reduce((sum, p) => sum + p.amount, 0);

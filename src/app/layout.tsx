@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+import { CompanyProvider } from '@/context/CompanyContext';
 
 const inter = Inter({
   variable: '--font-sans',
@@ -31,7 +32,9 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-500/10 selection:text-indigo-600">
-        {children}
+        <CompanyProvider>
+          {children}
+        </CompanyProvider>
       </body>
     </html>
   );

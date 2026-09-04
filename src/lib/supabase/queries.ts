@@ -1,11 +1,193 @@
 import { isSupabaseConfigured, createClient as createBrowserSupabase } from './client';
-import { getMockDb, saveMockPayables, saveMockVendors, saveMockEmployees, saveMockPaymentHistory, saveMockLandowners, SEEDED_CATEGORIES, Payable, PDC, Category, LoanSchedule, Vendor, Employee, Landowner, PaymentHistory } from './mockDb';
+import { 
+  getMockDb, 
+  saveMockCompanies,
+  saveMockPayables, 
+  saveMockVendors, 
+  saveMockEmployees, 
+  saveMockPaymentHistory, 
+  saveMockLandowners, 
+  SEEDED_CATEGORIES, 
+  SEEDED_COMPANIES,
+  Company,
+  CompanyBankAccount,
+  Payable, 
+  PDC, 
+  Category, 
+  LoanSchedule, 
+  Vendor, 
+  Employee, 
+  Landowner, 
+  PaymentHistory 
+} from './mockDb';
 import { format, parse, addMonths, compareAsc, addWeeks, endOfMonth } from 'date-fns';
 
 // Helper to determine if we should use mock database
 const shouldUseMock = () => {
   return !isSupabaseConfigured();
 };
+
+export async function getCompanies(): Promise<Company[]> {
+  if (!shouldUseMock()) {
+    try {
+      const supabase = createBrowserSupabase();
+      const { data, error } = await supabase.from('companies').select('*');
+      if (!error && data && data.length > 0) {
+        return data as Company[];
+      }
+    } catch {
+      // Fallback to local storage
+    }
+  }
+  return getMockDb().companies;
+}
+
+export async function getCompanyById(id: string): Promise<Company | null> {
+  const list = await getCompanies();
+  return list.find(c => c.id === id) || null;
+}
+
+export async function createCompany(companyData: Omit<Company, 'id' | 'created_at'>): Promise<Company> {
+  const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'comp-' + Math.random().toString(36).substr(2, 9);
+  const now = new Date().toISOString();
+  const newCompany: Company = {
+    ...companyData,
+    id: newId,
+    bank_accounts: (companyData.bank_accounts || []).map((b, idx) => ({
+      ...b,
+      id: b.id || (typeof crypto !== 'undefined' ? crypto.randomUUID() : `acc-${idx + 1}`),
+      company_id: newId
+    })),
+    created_at: now
+  };
+
+  if (!shouldUseMock()) {
+    try {
+      const supabase = createBrowserSupabase();
+      await supabase.from('companies').insert(newCompany);
+    } catch (e) {
+      console.warn('Supabase company insert error (fallback to local):', e);
+    }
+  }
+
+  const db = getMockDb();
+  const updated = [...db.companies, newCompany];
+  saveMockCompanies(updated);
+  return newCompany;
+}
+
+export async function updateCompany(id: string, companyData: Partial<Company>): Promise<Company> {
+  const db = getMockDb();
+  const index = db.companies.findIndex(c => c.id === id);
+  const original = index !== -1 ? db.companies[index] : SEEDED_COMPANIES[0];
+
+  const updated: Company = {
+    ...original,
+    ...companyData,
+    bank_accounts: companyData.bank_accounts 
+      ? companyData.bank_accounts.map((b, idx) => ({
+          ...b,
+          id: b.id || (typeof crypto !== 'undefined' ? crypto.randomUUID() : `acc-${idx + 1}`),
+          company_id: id
+        }))
+      : original.bank_accounts
+  };
+
+  if (!shouldUseMock()) {
+    try {
+      const supabase = createBrowserSupabase();
+      await supabase.from('companies').update(updated).eq('id', id);
+    } catch (e) {
+      console.warn('Supabase company update error:', e);
+    }
+  }
+
+  if (index !== -1) {
+    db.companies[index] = updated;
+  } else {
+    db.companies.push(updated);
+  }
+  saveMockCompanies(db.companies);
+  return updated;
+}
+
+export async function deleteCompany(id: string): Promise<boolean> {
+  if (!shouldUseMock()) {
+    try {
+      const supabase = createBrowserSupabase();
+      await supabase.from('companies').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase company delete error:', e);
+    }
+  }
+
+  const db = getMockDb();
+  // Don't delete if it's the only company
+  if (db.companies.length <= 1) {
+    return false;
+  }
+  const countBefore = db.companies.length;
+  const filtered = db.companies.filter(c => c.id !== id);
+  saveMockCompanies(filtered);
+  return filtered.length < countBefore;
+}
+
+export async function addCompanyBankAccount(companyId: string, bankAccount: Omit<CompanyBankAccount, 'id' | 'company_id'>): Promise<Company> {
+  const company = await getCompanyById(companyId);
+  if (!company) throw new Error('Company not found');
+
+  const newAccId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'acc-' + Math.random().toString(36).substr(2, 9);
+  let updatedAccounts = [...(company.bank_accounts || [])];
+
+  if (bankAccount.is_default) {
+    updatedAccounts = updatedAccounts.map(a => ({ ...a, is_default: false }));
+  }
+
+  updatedAccounts.push({
+    ...bankAccount,
+    id: newAccId,
+    company_id: companyId,
+    is_default: updatedAccounts.length === 0 ? true : bankAccount.is_default
+  });
+
+  return updateCompany(companyId, { bank_accounts: updatedAccounts });
+}
+
+export async function updateCompanyBankAccount(
+  companyId: string, 
+  accountId: string, 
+  data: Partial<CompanyBankAccount>
+): Promise<Company> {
+  const company = await getCompanyById(companyId);
+  if (!company) throw new Error('Company not found');
+
+  let accounts = company.bank_accounts || [];
+  if (data.is_default) {
+    accounts = accounts.map(a => ({ ...a, is_default: false }));
+  }
+
+  const updatedAccounts = accounts.map(acc => {
+    if (acc.id === accountId) {
+      return { ...acc, ...data };
+    }
+    return acc;
+  });
+
+  return updateCompany(companyId, { bank_accounts: updatedAccounts });
+}
+
+export async function deleteCompanyBankAccount(companyId: string, accountId: string): Promise<Company> {
+  const company = await getCompanyById(companyId);
+  if (!company) throw new Error('Company not found');
+
+  let remaining = (company.bank_accounts || []).filter(a => a.id !== accountId);
+  // Ensure at least one default account if accounts exist
+  if (remaining.length > 0 && !remaining.some(a => a.is_default)) {
+    remaining[0].is_default = true;
+  }
+
+  return updateCompany(companyId, { bank_accounts: remaining });
+}
 
 export async function getCategories(): Promise<Category[]> {
   if (!shouldUseMock()) {
@@ -31,8 +213,10 @@ export async function getCategories(): Promise<Category[]> {
 
 export async function getPayables(
   monthYear: string,
-  filters: { categoryId?: string; status?: string; search?: string } = {}
+  filters: { categoryId?: string; status?: string; search?: string; companyId?: string } = {}
 ): Promise<Payable[]> {
+  const companies = await getCompanies();
+
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
     // Fetch items for the current month OR previous items that are unpaid (pending or overdue)
@@ -46,6 +230,9 @@ export async function getPayables(
     }
     if (filters.status && filters.status !== 'all') {
       query = query.eq('status', filters.status);
+    }
+    if (filters.companyId && filters.companyId !== 'all') {
+      query = query.eq('company_id', filters.companyId);
     }
     if (filters.search) {
       query = query.or(`title.ilike.%${filters.search}%,vendor_name.ilike.%${filters.search}%`);
@@ -64,6 +251,7 @@ export async function getPayables(
         });
         return {
           ...p,
+          company: companies.find(c => c.id === p.company_id) || companies[0],
           payments: mappedPayments
         };
       });
@@ -84,6 +272,9 @@ export async function getPayables(
   if (filters.status && filters.status !== 'all') {
     results = results.filter((p) => p.status === filters.status);
   }
+  if (filters.companyId && filters.companyId !== 'all') {
+    results = results.filter((p) => (p.company_id || 'comp-1') === filters.companyId);
+  }
   if (filters.search) {
     const term = filters.search.toLowerCase();
     results = results.filter(
@@ -93,9 +284,10 @@ export async function getPayables(
     );
   }
 
-  // Attach full category objects for display
+  // Attach full category & company objects for display
   return results.map(p => ({
     ...p,
+    company: companies.find(c => c.id === p.company_id) || companies[0],
     category: db.categories.find(c => c.id === p.category_id),
     pdc: db.pdcs.find(pdc => pdc.payable_id === p.id),
     loan: db.loan_schedule.find(l => l.payable_id === p.id)
@@ -103,6 +295,7 @@ export async function getPayables(
 }
 
 export async function getPayableById(id: string): Promise<Payable | null> {
+  const companies = await getCompanies();
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
     const { data, error } = await supabase
@@ -110,7 +303,12 @@ export async function getPayableById(id: string): Promise<Payable | null> {
       .select('*, pdc:pdcs(*), loan:loan_schedule(*), payments:payment_history(*)')
       .eq('id', id)
       .single();
-    if (!error && data) return data;
+    if (!error && data) {
+      return {
+        ...data,
+        company: companies.find(c => c.id === data.company_id) || companies[0]
+      };
+    }
   }
 
   const db = getMockDb();
@@ -119,6 +317,7 @@ export async function getPayableById(id: string): Promise<Payable | null> {
 
   return {
     ...payable,
+    company: companies.find(c => c.id === payable.company_id) || companies[0],
     category: db.categories.find(c => c.id === payable.category_id),
     pdc: db.pdcs.find(pdc => pdc.payable_id === payable.id),
     loan: db.loan_schedule.find(l => l.payable_id === payable.id),
@@ -622,12 +821,19 @@ export async function updatePayableStatus(
   });
 }
 
-export async function getPdcs(filters: { status?: string } = {}): Promise<Payable[]> {
+export async function getPdcs(filters: { status?: string; companyId?: string } = {}): Promise<Payable[]> {
+  const companies = await getCompanies();
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
-    const { data, error } = await supabase
+    let query = supabase
       .from('payables')
       .select('*, category:categories(*), pdc:pdcs(*)');
+
+    if (filters.companyId && filters.companyId !== 'all') {
+      query = query.eq('company_id', filters.companyId);
+    }
+
+    const { data, error } = await query;
 
     if (!error && data) {
       // Filter in JS to find payables with PDC
@@ -638,7 +844,10 @@ export async function getPdcs(filters: { status?: string } = {}): Promise<Payabl
         results = results.filter(p => p.pdc?.status === filters.status);
       }
 
-      return results as Payable[];
+      return results.map(p => ({
+        ...p,
+        company: companies.find(c => c.id === p.company_id) || companies[0]
+      })) as Payable[];
     }
   }
 
@@ -646,12 +855,16 @@ export async function getPdcs(filters: { status?: string } = {}): Promise<Payabl
   let payablesWithPdc = db.payables.filter((p) => p.category_id === 'cat-4' || p.pdc);
 
   // Parse filters
+  if (filters.companyId && filters.companyId !== 'all') {
+    payablesWithPdc = payablesWithPdc.filter(p => (p.company_id || 'comp-1') === filters.companyId);
+  }
   if (filters.status && filters.status !== 'all') {
     payablesWithPdc = payablesWithPdc.filter((p) => p.pdc?.status === filters.status);
   }
 
   return payablesWithPdc.map(p => ({
     ...p,
+    company: companies.find(c => c.id === p.company_id) || companies[0],
     category: db.categories.find(c => c.id === p.category_id),
     pdc: db.pdcs.find(pdc => pdc.payable_id === p.id) || p.pdc
   })) as Payable[];
@@ -689,44 +902,84 @@ export async function updatePdcStatus(
   return updatePayable(payableId, payableStatusUpdate);
 }
 
-export async function getReports(startMonth: string, endMonth: string): Promise<Payable[]> {
+export async function getReports(
+  startMonth: string, 
+  endMonth: string, 
+  filters: { companyId?: string } = {}
+): Promise<Payable[]> {
+  const companies = await getCompanies();
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
-    const { data, error } = await supabase
+    let query = supabase
       .from('payables')
       .select('*, category:categories(*), pdc:pdcs(*), loan:loan_schedule(*)')
       .or(`and(month_year.gte.${startMonth},month_year.lte.${endMonth}),and(month_year.lt.${startMonth},status.in.(pending,overdue,partial))`);
-    if (!error && data) return data;
+
+    if (filters.companyId && filters.companyId !== 'all') {
+      query = query.eq('company_id', filters.companyId);
+    }
+
+    const { data, error } = await query;
+    if (!error && data) {
+      return (data as any[]).map((p: any) => ({
+        ...p,
+        company: companies.find(c => c.id === p.company_id) || companies[0]
+      })) as Payable[];
+    }
   }
 
   const db = getMockDb();
 
   // Filter payables that fall within month range inclusive or previous unpaid items
-  const results = db.payables.filter((p) => {
+  let results = db.payables.filter((p) => {
     const inRange = p.month_year >= startMonth && p.month_year <= endMonth;
     const isPreviousUnpaid = p.month_year < startMonth && (p.status === 'pending' || p.status === 'overdue' || p.status === 'partial');
     return inRange || isPreviousUnpaid;
   });
 
+  if (filters.companyId && filters.companyId !== 'all') {
+    results = results.filter(p => (p.company_id || 'comp-1') === filters.companyId);
+  }
+
   return results.map(p => ({
     ...p,
+    company: companies.find(c => c.id === p.company_id) || companies[0],
     category: db.categories.find(c => c.id === p.category_id),
     pdc: db.pdcs.find(pdc => pdc.payable_id === p.id),
     loan: db.loan_schedule.find(l => l.payable_id === p.id)
   })) as Payable[];
 }
 
-export async function getAllPayables(): Promise<Payable[]> {
+export async function getAllPayables(filters: { companyId?: string } = {}): Promise<Payable[]> {
+  const companies = await getCompanies();
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
-    const { data, error } = await supabase
+    let query = supabase
       .from('payables')
       .select('*, category:categories(*), pdc:pdcs(*), loan:loan_schedule(*)');
-    if (!error && data) return data;
+
+    if (filters.companyId && filters.companyId !== 'all') {
+      query = query.eq('company_id', filters.companyId);
+    }
+
+    const { data, error } = await query;
+    if (!error && data) {
+      return (data as any[]).map((p: any) => ({
+        ...p,
+        company: companies.find(c => c.id === p.company_id) || companies[0]
+      })) as Payable[];
+    }
   }
+
   const db = getMockDb();
-  return db.payables.map(p => ({
+  let list = db.payables;
+  if (filters.companyId && filters.companyId !== 'all') {
+    list = list.filter(p => (p.company_id || 'comp-1') === filters.companyId);
+  }
+
+  return list.map(p => ({
     ...p,
+    company: companies.find(c => c.id === p.company_id) || companies[0],
     category: db.categories.find(c => c.id === p.category_id),
     pdc: db.pdcs.find(pdc => pdc.payable_id === p.id),
     loan: db.loan_schedule.find(l => l.payable_id === p.id)

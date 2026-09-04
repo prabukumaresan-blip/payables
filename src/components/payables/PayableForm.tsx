@@ -6,9 +6,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as zod from 'zod';
 import { Payable, Category, PDC, LoanSchedule, Vendor, Employee, Landowner } from '@/lib/supabase/mockDb';
 import { createPayable, updatePayable, getVendors, createVendor, getEmployees, createEmployee, deleteVendor, getLandowners, createLandowner, deleteLandowner } from '@/lib/supabase/queries';
-import { AlertCircle, HelpCircle, Plus, Check, Trash2, Search } from 'lucide-react';
+import { useCompany } from '@/context/CompanyContext';
+import { AlertCircle, HelpCircle, Plus, Check, Trash2, Search, Building2 } from 'lucide-react';
 
 const formSchema = zod.object({
+  company_id: zod.string().optional(),
   title: zod.string().min(1, 'Title is required'),
   category_id: zod.string().min(1, 'Category is required'),
   vendor_name: zod.string().optional(),
@@ -51,6 +53,10 @@ interface PayableFormProps {
 
 export default function PayableForm({ categories, payable, onSuccess, onCancel }: PayableFormProps) {
   const isEdit = !!payable;
+  const { companies, selectedCompanyId } = useCompany();
+
+  const activeCompanyDefault = payable?.company_id 
+    || (selectedCompanyId && selectedCompanyId !== 'ALL' ? selectedCompanyId : (companies[0]?.id || 'comp-1'));
 
   const {
     register,
@@ -61,6 +67,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
   } = useForm<any>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      company_id: activeCompanyDefault,
       title: '',
       category_id: categories[0]?.id || '',
       vendor_name: '',
@@ -199,6 +206,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
   // If editing, populate form defaults
   useEffect(() => {
     if (payable) {
+      setValue('company_id', payable.company_id || companies[0]?.id || 'comp-1');
       setValue('title', payable.title);
       setValue('category_id', payable.category_id);
       setValue('vendor_name', payable.vendor_name || '');
@@ -229,11 +237,12 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
         setValue('rent_due_day', payable.rent_due_day || 5);
       }
     }
-  }, [payable, setValue]);
+  }, [payable, setValue, companies]);
 
   const onSubmit = async (values: any) => {
     try {
       const finalPayableData: any = {
+        company_id: values.company_id || companies[0]?.id || 'comp-1',
         title: values.title,
         category_id: values.category_id,
         vendor_name: values.vendor_name || null,
@@ -305,6 +314,27 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 text-slate-700">
+      {/* Company Selection */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+          <Building2 className="h-3.5 w-3.5 text-indigo-600" />
+          Entity / Company <span className="text-rose-500">*</span>
+        </label>
+        <select
+          {...register('company_id')}
+          className="w-full rounded-lg border border-slate-200 bg-white py-2 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-indigo-500"
+        >
+          {companies.map((comp) => {
+            const defAcc = comp.bank_accounts?.find(a => a.is_default) || comp.bank_accounts?.[0];
+            return (
+              <option key={comp.id} value={comp.id}>
+                {comp.name} {defAcc ? `• ${defAcc.bank_name} (${defAcc.account_number})` : ''}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
       {/* Title */}
       <div className="space-y-1.5">
         <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">

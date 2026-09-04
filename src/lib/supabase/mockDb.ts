@@ -1,5 +1,122 @@
 import { format, addDays, subDays } from 'date-fns';
 
+export interface CompanyBankAccount {
+  id: string;
+  company_id: string;
+  bank_name: string;
+  account_number: string;
+  swift_code?: string | null;
+  account_title?: string | null;
+  currency: string;
+  is_default: boolean;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  short_name?: string | null;
+  subtitle?: string | null;
+  tax_number?: string | null;
+  cr_number?: string | null;
+  logo_url?: string | null;
+  color?: string | null;
+  is_active: boolean;
+  bank_accounts: CompanyBankAccount[];
+  created_at?: string;
+}
+
+export const SEEDED_COMPANIES: Company[] = [
+  {
+    id: 'comp-1',
+    name: 'BRIGHT FLOWERS TRADING LLC',
+    short_name: 'Bright Flowers',
+    subtitle: 'Trading LLC',
+    tax_number: 'OM1100234567',
+    cr_number: '1249823',
+    color: 'indigo',
+    is_active: true,
+    bank_accounts: [
+      {
+        id: 'acc-1',
+        company_id: 'comp-1',
+        bank_name: 'Bank Muscat',
+        account_number: '0371024323360013',
+        swift_code: 'BMUSOMRX',
+        account_title: 'Main Operations Account',
+        currency: 'OMR',
+        is_default: true,
+      },
+      {
+        id: 'acc-2',
+        company_id: 'comp-1',
+        bank_name: 'Bank Dhofar',
+        account_number: '0492018471200021',
+        swift_code: 'BKDHOMRX',
+        account_title: 'Secondary Operations',
+        currency: 'OMR',
+        is_default: false,
+      },
+    ],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'comp-2',
+    name: 'DESERT BLOOM LOGISTICS LLC',
+    short_name: 'Desert Bloom',
+    subtitle: 'Logistics LLC',
+    tax_number: 'OM1100987654',
+    cr_number: '1388412',
+    color: 'emerald',
+    is_active: true,
+    bank_accounts: [
+      {
+        id: 'acc-3',
+        company_id: 'comp-2',
+        bank_name: 'National Bank of Oman',
+        account_number: '0183049281720031',
+        swift_code: 'NBOKOMRX',
+        account_title: 'Corporate Treasury Account',
+        currency: 'OMR',
+        is_default: true,
+      },
+      {
+        id: 'acc-4',
+        company_id: 'comp-2',
+        bank_name: 'Bank Muscat',
+        account_number: '0315098234120044',
+        swift_code: 'BMUSOMRX',
+        account_title: 'Payroll & Fleet Account',
+        currency: 'OMR',
+        is_default: false,
+      },
+    ],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'comp-3',
+    name: 'GULF PETALS ENTERPRISES SPC',
+    short_name: 'Gulf Petals',
+    subtitle: 'Enterprises SPC',
+    tax_number: 'OM1100554433',
+    cr_number: '1499201',
+    color: 'violet',
+    is_active: true,
+    bank_accounts: [
+      {
+        id: 'acc-5',
+        company_id: 'comp-3',
+        bank_name: 'Sohar International',
+        account_number: '0250017482910055',
+        swift_code: 'BKSHOMRX',
+        account_title: 'Main Commercial Account',
+        currency: 'OMR',
+        is_default: true,
+      },
+    ],
+    created_at: new Date().toISOString(),
+  },
+];
+
 export interface Category {
   id: string;
   name: string;
@@ -22,6 +139,7 @@ export interface Vendor {
   outstanding_payable_amount?: number | null;
   unused_credits_payable_amount?: number | null;
   zoho_last_synced_at?: string | null;
+  company_id?: string | null;
   created_at?: string;
 }
 
@@ -38,6 +156,7 @@ export interface Employee {
   account_no?: string | null;
   swift_code?: string | null;
   bank_type?: 'BANK_MUSCAT' | 'OTHER_BANK' | null;
+  company_id?: string | null;
   created_at?: string;
 }
 
@@ -54,6 +173,7 @@ export interface Landowner {
   account_no?: string | null;
   swift_code?: string | null;
   bank_type?: 'BANK_MUSCAT' | 'OTHER_BANK' | null;
+  company_id?: string | null;
   created_at?: string;
 }
 
@@ -63,6 +183,8 @@ export interface Payable {
   id: string;
   title: string;
   category_id: string;
+  company_id?: string | null;
+  debit_bank_account_id?: string | null;
   vendor_name: string | null;
   amount: number;
   currency: string;
@@ -80,6 +202,7 @@ export interface Payable {
   updated_at: string;
   zoho_bill_id?: string | null;
   zoho_bill_number?: string | null;
+  company?: Company | null;
   pdc?: PDC | null;
   loan?: LoanSchedule | null;
   category?: Category | null;
@@ -123,6 +246,7 @@ export interface PaymentHistory {
   notes?: string | null;
   zoho_payment_id?: string | null;
   zoho_synced_at?: string | null;
+  company_id?: string | null;
   created_at?: string;
 }
 
@@ -143,6 +267,7 @@ const getStorageKey = (key: string) => `payables_tracker_v2_${key}`;
 export const getMockDb = () => {
   if (typeof window === 'undefined') {
     return {
+      companies: SEEDED_COMPANIES,
       categories: SEEDED_CATEGORIES,
       vendors: SEEDED_VENDORS,
       employees: SEEDED_EMPLOYEES,
@@ -152,6 +277,26 @@ export const getMockDb = () => {
       loan_schedule: [],
       payment_history: []
     };
+  }
+
+  // Load companies
+  let companies = SEEDED_COMPANIES;
+  const storedCompanies = localStorage.getItem(getStorageKey('companies'));
+  if (storedCompanies) {
+    try {
+      companies = JSON.parse(storedCompanies);
+      // Auto merge any new seeded companies
+      const storedIds = companies.map((c: any) => c.id);
+      const missing = SEEDED_COMPANIES.filter(c => !storedIds.includes(c.id));
+      if (missing.length > 0) {
+        companies = [...companies, ...missing];
+        localStorage.setItem(getStorageKey('companies'), JSON.stringify(companies));
+      }
+    } catch {
+      companies = SEEDED_COMPANIES;
+    }
+  } else {
+    localStorage.setItem(getStorageKey('companies'), JSON.stringify(SEEDED_COMPANIES));
   }
 
   // Load categories
@@ -193,6 +338,17 @@ export const getMockDb = () => {
   const storedPayables = localStorage.getItem(getStorageKey('payables'));
   if (storedPayables) {
     payables = JSON.parse(storedPayables);
+    // Assign default company if none exists
+    let modified = false;
+    payables.forEach(p => {
+      if (!p.company_id) {
+        p.company_id = 'comp-1';
+        modified = true;
+      }
+    });
+    if (modified) {
+      localStorage.setItem(getStorageKey('payables'), JSON.stringify(payables));
+    }
   } else {
     payables = [];
     localStorage.setItem(getStorageKey('payables'), JSON.stringify(payables));
@@ -226,7 +382,13 @@ export const getMockDb = () => {
     localStorage.setItem(getStorageKey('landowners'), JSON.stringify(SEEDED_LANDOWNERS));
   }
 
-  return { categories, vendors, employees, landowners, payables, pdcs, loan_schedule, payment_history };
+  return { companies, categories, vendors, employees, landowners, payables, pdcs, loan_schedule, payment_history };
+};
+
+export const saveMockCompanies = (companies: Company[]) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(getStorageKey('companies'), JSON.stringify(companies));
+  }
 };
 
 export const saveMockPayables = (payables: Payable[]) => {

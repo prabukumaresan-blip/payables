@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { isSupabaseConfigured, createClient } from '@/lib/supabase/client';
+import { useCompany } from '@/context/CompanyContext';
 import { 
   LayoutDashboard, 
   Receipt, 
@@ -13,6 +14,7 @@ import {
   CreditCard,
   Users,
   Home,
+  Briefcase,
   X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,6 +28,7 @@ interface SidebarProps {
 export default function Sidebar({ className, isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedCompany } = useCompany();
 
   const handleLogout = async () => {
     // Clear mock session cookie
@@ -71,11 +74,19 @@ export default function Sidebar({ className, isOpen, onClose }: SidebarProps) {
       icon: Home
     },
     {
+      label: 'Companies',
+      href: '/companies',
+      icon: Briefcase
+    },
+    {
       label: 'Reports',
       href: '/reports',
       icon: BarChart3
     }
   ];
+
+  const brandTitle = selectedCompany?.short_name || 'Bright Flowers';
+  const brandSubtitle = selectedCompany?.subtitle || 'Trading LLC';
 
   return (
     <>
@@ -94,15 +105,15 @@ export default function Sidebar({ className, isOpen, onClose }: SidebarProps) {
       )}>
         {/* Brand Header */}
         <div className="flex h-16 items-center justify-between px-6 border-b border-slate-100 gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 shadow-md shadow-indigo-500/20">
+          <Link href="/companies" className="flex items-center gap-3 group transition-transform">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 shadow-md shadow-indigo-500/20 group-hover:scale-105 transition-transform">
               <Building2 className="h-5 w-5 text-white" />
             </div>
-            <div>
-              <h2 className="font-bold tracking-tight text-slate-900 leading-none">Bright Flowers</h2>
-              <span className="text-[10px] text-indigo-600 font-semibold uppercase tracking-wider">Trading LLC</span>
+            <div className="truncate">
+              <h2 className="font-bold tracking-tight text-slate-900 leading-none truncate">{brandTitle}</h2>
+              <span className="text-[10px] text-indigo-600 font-semibold uppercase tracking-wider truncate block">{brandSubtitle}</span>
             </div>
-          </div>
+          </Link>
           {onClose && (
             <button
               onClick={onClose}
