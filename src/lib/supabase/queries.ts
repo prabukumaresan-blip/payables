@@ -1544,6 +1544,9 @@ export async function addPaymentRecord(
       reference_no: newPayment.reference_no,
       bank_account: newPayment.bank_account,
       notes: newPayment.notes,
+      zoho_payment_id: newPayment.zoho_payment_id,
+      zoho_synced_at: newPayment.zoho_synced_at,
+      company_id: newPayment.company_id,
       created_at: newPayment.created_at
     };
     try {

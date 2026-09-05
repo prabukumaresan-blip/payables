@@ -66,11 +66,14 @@ export async function POST(req: NextRequest) {
             }
           }
           if (!targetOrgId && payable.company_id) {
-            const { data: company } = await supabase
+            const { data: company, error: compErr } = await supabase
               .from('companies')
               .select('zoho_organization_id')
               .eq('id', payable.company_id)
               .single();
+            if (compErr) {
+              console.error('Failed to query companies table. Did you run the migration?:', compErr);
+            }
             if (company?.zoho_organization_id) {
               targetOrgId = company.zoho_organization_id;
             }
@@ -81,11 +84,14 @@ export async function POST(req: NextRequest) {
 
     // If company_id was explicitly provided and we still don't have targetOrgId
     if (company_id && !targetOrgId && supabase) {
-      const { data: company } = await supabase
+      const { data: company, error: compErr } = await supabase
         .from('companies')
         .select('zoho_organization_id')
         .eq('id', company_id)
         .single();
+      if (compErr) {
+        console.error('Failed to query companies table for company_id. Did you run the migration?:', compErr);
+      }
       if (company?.zoho_organization_id) {
         targetOrgId = company.zoho_organization_id;
       }
