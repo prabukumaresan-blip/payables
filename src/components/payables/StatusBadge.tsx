@@ -5,7 +5,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Payable, PaymentHistory } from '@/lib/supabase/mockDb';
 import { updatePayableStatus, getPaymentHistory, addPaymentRecord, deletePaymentRecord } from '@/lib/supabase/queries';
-import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2, Zap } from 'lucide-react';
+import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2, Zap, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { formatOMR } from '@/lib/utils/formatCurrency';
@@ -80,7 +80,10 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
     };
   }, [isOpen]);
 
+  const [modalError, setModalError] = useState<string | null>(null);
+
   const handleStatusChange = async (status: Payable['status']) => {
+    setModalError(null);
     setSelectedStatus(status);
     if (payable.category_id !== 'cat-8') {
       if (status !== 'paid' && status !== 'partial') {
@@ -97,13 +100,15 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
 
   const saveStatus = async (status: Payable['status'], payDate: string | null, paidAmount: number | null) => {
     setLoading(true);
+    setModalError(null);
     try {
       const newAmt = payable.category_id === 'cat-8' ? parseFloat(billAmount) || 0 : null;
       const updated = await updatePayableStatus(payable.id, status, payDate, paidAmount, newAmt);
       onUpdate(updated);
       setIsOpen(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error updating status:', e);
+      setModalError(e?.message || 'Failed to update status. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -111,7 +116,11 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
 
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addAmount || parseFloat(addAmount) <= 0) return;
+    setModalError(null);
+    if (!addAmount || parseFloat(addAmount) <= 0) {
+      setModalError('Please enter a valid payment amount greater than 0 OMR');
+      return;
+    }
     
     setActionLoading(true);
     try {
@@ -131,8 +140,9 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
       setAddNotes('');
       setSelectedStatus(updated.status);
       setPaymentDate(updated.payment_date || format(new Date(), 'yyyy-MM-dd'));
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error adding payment:', e);
+      setModalError(e?.message || 'Failed to record payment. Please try again.');
     } finally {
       setActionLoading(false);
     }
@@ -219,6 +229,14 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
                 Cancel
               </button>
             </div>
+
+            {/* Error banner */}
+            {modalError && (
+              <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-xs text-rose-700 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                <span>{modalError}</span>
+              </div>
+            )}
 
             {/* Split layout: Status & Payments */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-6">

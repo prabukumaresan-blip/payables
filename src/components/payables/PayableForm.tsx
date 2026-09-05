@@ -239,21 +239,44 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
     }
   }, [payable, setValue, companies]);
 
+  const [formError, setFormError] = React.useState<string | null>(null);
+
+  // Auto-set category_id if initial value was empty or categories just loaded
+  useEffect(() => {
+    if (!payable && categories.length > 0) {
+      const currentCat = control._formValues?.category_id;
+      if (!currentCat || !categories.some(c => c.id === currentCat)) {
+        setValue('category_id', categories[0].id);
+      }
+    }
+  }, [categories, payable, setValue, control]);
+
   const onSubmit = async (values: any) => {
+    setFormError(null);
     try {
       const finalPayableData: any = {
         company_id: values.company_id || companies[0]?.id || 'comp-1',
-        title: values.title,
-        category_id: values.category_id,
-        vendor_name: values.vendor_name || null,
-        amount: values.amount,
-        currency: values.currency,
-        reference_no: values.reference_no || null,
-        bank_account: values.bank_account || null,
-        notes: values.notes || null,
-        attachment_url: values.attachment_url || null,
-        status: isEdit ? payable.status : 'pending',
+        title: values.title?.trim(),
+        category_id: values.category_id || categories[0]?.id || 'cat-1',
+        vendor_name: values.vendor_name ? values.vendor_name.trim() : null,
+        amount: Number(values.amount) || 0,
+        currency: values.currency || 'OMR',
+        reference_no: values.reference_no ? values.reference_no.trim() : null,
+        bank_account: values.bank_account ? values.bank_account.trim() : null,
+        notes: values.notes ? values.notes.trim() : null,
+        attachment_url: values.attachment_url ? values.attachment_url.trim() : null,
+        status: isEdit && payable ? payable.status : 'pending',
       };
+
+      if (!finalPayableData.title) {
+        setFormError('Title is required');
+        return;
+      }
+
+      if (!finalPayableData.amount || finalPayableData.amount <= 0) {
+        setFormError('Amount must be greater than 0 OMR');
+        return;
+      }
 
       if (selectedCategory?.name === 'Rent') {
         const startMonth = values.rent_start_month || new Date().toISOString().split('T')[0].substring(0, 7);
@@ -307,13 +330,33 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
       }
 
       onSuccess();
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error submitting form:', e);
+      setFormError(e?.message || 'Failed to save payable. Please check your inputs.');
     }
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 text-slate-700">
+    <form onSubmit={handleSubmit(onSubmit, (errs) => {
+      console.warn('Form validation failed:', errs);
+      if (errs.amount) {
+        setFormError('Please enter a valid amount greater than 0 OMR');
+      } else if (errs.title) {
+        setFormError('Please enter a title for the payable');
+      } else if (errs.category_id) {
+        setFormError('Please select a category');
+      } else {
+        setFormError('Please fill in all required fields');
+      }
+    })} className="space-y-5 text-slate-700">
+      {/* Global Form Error Message */}
+      {formError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs text-rose-700 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+          <span>{formError}</span>
+        </div>
+      )}
+
       {/* Company Selection */}
       <div className="space-y-1.5">
         <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">

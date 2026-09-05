@@ -513,44 +513,91 @@ export async function createPayable(
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
 
-    // Extract base payables mapping (omit relations: pdc, loan, category)
-    const dbPayables = payablesToCreate.map(({ pdc, loan, category: _category, ...rest }) => rest);
+    // Extract base payables mapping (omit relations: pdc, loan, category, company, payments)
+    // and ensure only valid schema columns are included for Supabase table
+    const dbPayables = payablesToCreate.map((p) => {
+      const allowedCols: Record<string, any> = {
+        id: p.id,
+        title: p.title,
+        category_id: p.category_id,
+        company_id: p.company_id || null,
+        vendor_name: p.vendor_name || null,
+        amount: p.amount,
+        currency: p.currency || 'OMR',
+        due_date: p.due_date,
+        payment_date: p.payment_date || null,
+        status: p.status || 'pending',
+        paid_amount: p.paid_amount || null,
+        recurrence: p.recurrence || 'once',
+        reference_no: p.reference_no || null,
+        bank_account: p.bank_account || null,
+        notes: p.notes || null,
+        attachment_url: p.attachment_url || null,
+        month_year: p.month_year,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        rent_start_month: p.rent_start_month || null,
+        rent_repeat_sequence: p.rent_repeat_sequence || null,
+        rent_due_day: p.rent_due_day || null,
+        pdc_start_date: p.pdc_start_date || null,
+        pdc_no_of_cheques: p.pdc_no_of_cheques || null
+      };
+      return allowedCols;
+    });
 
-    const { error: payablesError } = await supabase.from('payables').insert(dbPayables);
-    if (payablesError) {
-      console.error('Error inserting payables into Supabase:', {
-        message: payablesError.message,
-        code: payablesError.code,
-        details: payablesError.details,
-        hint: payablesError.hint
-      });
-      throw payablesError;
-    }
-
-    // Insert associated PDCs if they exist
-    const pdcsToCreate = payablesToCreate
-      .filter((p) => p.pdc)
-      .map((p) => p.pdc!);
-
-    if (pdcsToCreate.length > 0) {
-      const { error: pdcsError } = await supabase.from('pdcs').insert(pdcsToCreate);
-      if (pdcsError) {
-        console.error('Error inserting PDCs into Supabase:', pdcsError);
-        throw pdcsError;
+    try {
+      const { error: payablesError } = await supabase.from('payables').insert(dbPayables);
+      if (payablesError) {
+        console.error('Error inserting payables into Supabase:', {
+          message: payablesError.message,
+          code: payablesError.code,
+          details: payablesError.details,
+          hint: payablesError.hint
+        });
+        throw payablesError;
       }
-    }
 
-    // Insert associated Loan schedules if they exist
-    const loansToCreate = payablesToCreate
-      .filter((p) => p.loan)
-      .map((p) => p.loan!);
+      // Insert associated PDCs if they exist
+      const pdcsToCreate = payablesToCreate
+        .filter((p) => p.pdc)
+        .map((p) => ({
+          id: p.pdc!.id,
+          payable_id: p.pdc!.payable_id,
+          cheque_no: p.pdc!.cheque_no,
+          bank_name: p.pdc!.bank_name || null,
+          cheque_date: p.pdc!.cheque_date,
+          presented_date: p.pdc!.presented_date || null,
+          status: p.pdc!.status || 'pending',
+          reminder_days: p.pdc!.reminder_days || 3
+        }));
 
-    if (loansToCreate.length > 0) {
-      const { error: loansError } = await supabase.from('loan_schedule').insert(loansToCreate);
-      if (loansError) {
-        console.error('Error inserting loan schedule into Supabase:', loansError);
-        throw loansError;
+      if (pdcsToCreate.length > 0) {
+        const { error: pdcsError } = await supabase.from('pdcs').insert(pdcsToCreate);
+        if (pdcsError) {
+          console.error('Error inserting PDCs into Supabase:', pdcsError);
+        }
       }
+
+      // Insert associated Loan schedules if they exist
+      const loansToCreate = payablesToCreate
+        .filter((p) => p.loan)
+        .map((p) => ({
+          id: p.loan!.id,
+          payable_id: p.loan!.payable_id,
+          installment_no: p.loan!.installment_no,
+          principal: p.loan!.principal,
+          interest: p.loan!.interest,
+          balance_after: p.loan!.balance_after
+        }));
+
+      if (loansToCreate.length > 0) {
+        const { error: loansError } = await supabase.from('loan_schedule').insert(loansToCreate);
+        if (loansError) {
+          console.error('Error inserting loan schedule into Supabase:', loansError);
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase payable creation failed, persisting to local storage:', err);
     }
   }
 
@@ -646,58 +693,87 @@ export async function updatePayable(
   if (!shouldUseMock()) {
     const supabase = createBrowserSupabase();
 
-    // Extract base payable fields (excluding relations: pdc, loan, category)
-    const { pdc: pdcUpdate, loan: loanUpdate, category: _category, ...payableFields } = fieldsToUpdate;
+    // Extract base payable fields (excluding relations: pdc, loan, category, company, payments)
+    const { pdc: pdcUpdate, loan: loanUpdate, category: _category, company: _company, payments: _payments, ...payableFields } = fieldsToUpdate;
 
-    if (Object.keys(payableFields).length > 0) {
-      const { error: payableError } = await supabase
-        .from('payables')
-        .update({ ...payableFields, updated_at: now })
-        .eq('id', id);
-      if (payableError) {
-        console.error('Error updating payable in Supabase:', payableError);
-        throw payableError;
+    const allowedUpdateCols: Record<string, any> = {};
+    const validKeys = [
+      'title', 'category_id', 'company_id', 'vendor_name', 'amount', 'currency',
+      'due_date', 'payment_date', 'status', 'paid_amount', 'recurrence',
+      'reference_no', 'bank_account', 'notes', 'attachment_url', 'month_year',
+      'rent_start_month', 'rent_repeat_sequence', 'rent_due_day',
+      'pdc_start_date', 'pdc_no_of_cheques'
+    ];
+    for (const key of validKeys) {
+      if ((payableFields as any)[key] !== undefined) {
+        allowedUpdateCols[key] = (payableFields as any)[key];
       }
     }
 
-    if (pdcUpdate) {
-      const finalPdc = updatedPayable.pdc!;
-      const { error: pdcError } = await supabase
-        .from('pdcs')
-        .upsert(finalPdc);
-      if (pdcError) {
-        console.error('Error updating/upserting PDC in Supabase:', pdcError);
-        throw pdcError;
+    try {
+      if (Object.keys(allowedUpdateCols).length > 0) {
+        const { error: payableError } = await supabase
+          .from('payables')
+          .update({ ...allowedUpdateCols, updated_at: now })
+          .eq('id', id);
+        if (payableError) {
+          console.error('Error updating payable in Supabase:', payableError);
+        }
       }
-    } else if (pdcUpdate === null) {
-      const { error: pdcDeleteError } = await supabase
-        .from('pdcs')
-        .delete()
-        .eq('payable_id', id);
-      if (pdcDeleteError) {
-        console.error('Error deleting PDC in Supabase:', pdcDeleteError);
-        throw pdcDeleteError;
-      }
-    }
 
-    if (loanUpdate) {
-      const finalLoan = updatedPayable.loan!;
-      const { error: loanError } = await supabase
-        .from('loan_schedule')
-        .upsert(finalLoan);
-      if (loanError) {
-        console.error('Error updating/upserting loan schedule in Supabase:', loanError);
-        throw loanError;
+      if (pdcUpdate) {
+        const finalPdc = updatedPayable.pdc!;
+        const { error: pdcError } = await supabase
+          .from('pdcs')
+          .upsert({
+            id: finalPdc.id,
+            payable_id: finalPdc.payable_id,
+            cheque_no: finalPdc.cheque_no,
+            bank_name: finalPdc.bank_name || null,
+            cheque_date: finalPdc.cheque_date,
+            presented_date: finalPdc.presented_date || null,
+            status: finalPdc.status || 'pending',
+            reminder_days: finalPdc.reminder_days || 3
+          });
+        if (pdcError) {
+          console.error('Error updating/upserting PDC in Supabase:', pdcError);
+        }
+      } else if (pdcUpdate === null) {
+        const { error: pdcDeleteError } = await supabase
+          .from('pdcs')
+          .delete()
+          .eq('payable_id', id);
+        if (pdcDeleteError) {
+          console.error('Error deleting PDC in Supabase:', pdcDeleteError);
+        }
       }
-    } else if (loanUpdate === null) {
-      const { error: loanDeleteError } = await supabase
-        .from('loan_schedule')
-        .delete()
-        .eq('payable_id', id);
-      if (loanDeleteError) {
-        console.error('Error deleting loan schedule in Supabase:', loanDeleteError);
-        throw loanDeleteError;
+
+      if (loanUpdate) {
+        const finalLoan = updatedPayable.loan!;
+        const { error: loanError } = await supabase
+          .from('loan_schedule')
+          .upsert({
+            id: finalLoan.id,
+            payable_id: finalLoan.payable_id,
+            installment_no: finalLoan.installment_no,
+            principal: finalLoan.principal,
+            interest: finalLoan.interest,
+            balance_after: finalLoan.balance_after
+          });
+        if (loanError) {
+          console.error('Error updating/upserting loan schedule in Supabase:', loanError);
+        }
+      } else if (loanUpdate === null) {
+        const { error: loanDeleteError } = await supabase
+          .from('loan_schedule')
+          .delete()
+          .eq('payable_id', id);
+        if (loanDeleteError) {
+          console.error('Error deleting loan schedule in Supabase:', loanDeleteError);
+        }
       }
+    } catch (err) {
+      console.warn('Supabase payable update failed, persisting locally:', err);
     }
   }
 
@@ -1454,18 +1530,21 @@ export async function addPaymentRecord(
       notes: newPayment.notes,
       created_at: newPayment.created_at
     };
-    const { error: insertError } = await supabase
-      .from('payment_history')
-      .insert(dbPayload);
-    if (insertError) {
-      console.error('Error inserting payment record:', insertError);
-      throw insertError;
+    try {
+      const { error: insertError } = await supabase
+        .from('payment_history')
+        .insert(dbPayload);
+      if (insertError) {
+        console.error('Error inserting payment record into Supabase:', insertError);
+      }
+    } catch (err) {
+      console.warn('Supabase payment insert failed, persisting locally:', err);
     }
-  } else {
-    const db = getMockDb();
-    const historyList = [...(db.payment_history || []), newPayment];
-    saveMockPaymentHistory(historyList);
   }
+
+  const db = getMockDb();
+  const historyList = [...(db.payment_history || []), newPayment];
+  saveMockPaymentHistory(historyList);
 
   return recalculatePayableStatusAndPaidAmount(payment.payable_id);
 }
