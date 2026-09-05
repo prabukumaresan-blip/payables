@@ -31,7 +31,11 @@ export async function getCompanies(): Promise<Company[]> {
   if (!shouldUseMock()) {
     try {
       const supabase = createBrowserSupabase();
-      const { data, error } = await supabase.from('companies').select('*');
+      // Fetch companies with their bank accounts via the foreign key relationship
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*, bank_accounts:company_bank_accounts(*)');
+        
       if (!error && data && data.length > 0) {
         return data as Company[];
       }
