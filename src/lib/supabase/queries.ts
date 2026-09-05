@@ -1788,9 +1788,9 @@ async function recalculatePayableStatusAndPaidAmount(payableId: string): Promise
   const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
 
   let newStatus: Payable['status'] = 'partial';
-  if (totalPaid >= payable.amount) {
+  if (totalPaid >= Number(payable.amount) - 0.001) {
     newStatus = 'paid';
-  } else if (totalPaid <= 0) {
+  } else if (totalPaid <= 0.0001) {
     const today = format(new Date(), 'yyyy-MM-dd');
     newStatus = payable.due_date < today ? 'overdue' : 'pending';
   }
@@ -1803,7 +1803,7 @@ async function recalculatePayableStatusAndPaidAmount(payableId: string): Promise
 
   const updated = await updatePayable(payableId, {
     status: newStatus,
-    paid_amount: totalPaid > 0 ? totalPaid : null,
+    paid_amount: totalPaid > 0 ? Number(totalPaid.toFixed(3)) : null,
     payment_date: latestPaymentDate,
     skipHistorySync: true
   });

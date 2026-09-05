@@ -469,20 +469,24 @@ function PayablesContent() {
 
         // Update database/mockDb audit trail
         for (const payable of muscatPayables) {
-          const remaining = Number(payable.amount) - Number(payable.paid_amount || 0);
-          const exportAmt = parsedCustomAmounts[payable.id] !== undefined ? parsedCustomAmounts[payable.id] : remaining;
-          if (markPaidAfterExport && exportAmt > 0.001) {
-            await addPaymentRecord({
-              payable_id: payable.id,
-              amount: exportAmt,
-              payment_date: today,
-              reference_no: muscatUniqueId,
-              notes: 'Paid via file export'
-            });
-          } else {
-            await updatePayable(payable.id, {
-              reference_no: muscatUniqueId
-            });
+          try {
+            const remaining = Number(payable.amount) - Number(payable.paid_amount || 0);
+            const exportAmt = parsedCustomAmounts[payable.id] !== undefined ? parsedCustomAmounts[payable.id] : remaining;
+            if (markPaidAfterExport && exportAmt > 0.001) {
+              await addPaymentRecord({
+                payable_id: payable.id,
+                amount: exportAmt,
+                payment_date: today,
+                reference_no: muscatUniqueId,
+                notes: 'Paid via file export'
+              });
+            } else {
+              await updatePayable(payable.id, {
+                reference_no: muscatUniqueId
+              });
+            }
+          } catch (itemErr) {
+            console.error('Error processing payment for payable:', payable.id, itemErr);
           }
         }
       }
@@ -510,20 +514,24 @@ function PayablesContent() {
 
         // Update database/mockDb audit trail
         for (const payable of otherBankPayables) {
-          const remaining = Number(payable.amount) - Number(payable.paid_amount || 0);
-          const exportAmt = parsedCustomAmounts[payable.id] !== undefined ? parsedCustomAmounts[payable.id] : remaining;
-          if (markPaidAfterExport && exportAmt > 0.001) {
-            await addPaymentRecord({
-              payable_id: payable.id,
-              amount: exportAmt,
-              payment_date: today,
-              reference_no: otherBankUniqueId,
-              notes: 'Paid via file export'
-            });
-          } else {
-            await updatePayable(payable.id, {
-              reference_no: otherBankUniqueId
-            });
+          try {
+            const remaining = Number(payable.amount) - Number(payable.paid_amount || 0);
+            const exportAmt = parsedCustomAmounts[payable.id] !== undefined ? parsedCustomAmounts[payable.id] : remaining;
+            if (markPaidAfterExport && exportAmt > 0.001) {
+              await addPaymentRecord({
+                payable_id: payable.id,
+                amount: exportAmt,
+                payment_date: today,
+                reference_no: otherBankUniqueId,
+                notes: 'Paid via file export'
+              });
+            } else {
+              await updatePayable(payable.id, {
+                reference_no: otherBankUniqueId
+              });
+            }
+          } catch (itemErr) {
+            console.error('Error processing payment for payable:', payable.id, itemErr);
           }
         }
       }
@@ -578,9 +586,9 @@ function PayablesContent() {
         totalAmount: totalBatchAmount
       });
 
-      await loadData();
       setIsExportOpen(false);
       setSelectedIds([]); // Clear selection
+      await loadData();
       setIsApprovalOpen(true); // Open payment approval request modal
     } catch (err) {
       console.error("Error exporting payment file:", err);
