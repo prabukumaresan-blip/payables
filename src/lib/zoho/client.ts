@@ -384,8 +384,12 @@ export async function recordZohoVendorPayment(
     description: params.notes || 'Payment recorded via Payables Tracker'
   };
 
-  // Default paid_through_account_id to Bank Muscat Corporate Account if not explicitly passed
-  payload.paid_through_account_id = params.paidThroughAccountId || '3095712000000075328';
+  if (params.paidThroughAccountId) {
+    payload.paid_through_account_id = params.paidThroughAccountId;
+  } else if (!params.organizationId || params.organizationId === '771750431' || params.organizationId === 'config.organizationId') {
+    // Default to Bank Muscat Corporate Account for Bright Flowers TRADING LLC
+    payload.paid_through_account_id = '3095712000000075328';
+  }
 
   if (params.billId) {
     payload.bills = [
