@@ -613,6 +613,7 @@ export async function updatePayable(
   updatedFields: Partial<Payable> & {
     pdc?: Partial<PDC> | null;
     loan?: Partial<LoanSchedule> | null;
+    skipHistorySync?: boolean;
   }
 ): Promise<Payable> {
   const db = getMockDb();
@@ -629,7 +630,7 @@ export async function updatePayable(
   let finalPaidAmount = updatedFields.paid_amount;
   let finalPaymentDate = updatedFields.payment_date;
 
-  if (updatedFields.status !== undefined || updatedFields.paid_amount !== undefined) {
+  if (!updatedFields.skipHistorySync && (updatedFields.status !== undefined || updatedFields.paid_amount !== undefined)) {
     const syncRes = await syncPaymentHistoryOnStatusChange(
       id,
       original.status,
@@ -1432,6 +1433,10 @@ export async function syncVendorPaymentToZoho(params: {
   paymentDate: string;
   referenceNo?: string | null;
   notes?: string | null;
+  companyId?: string | null;
+  vendorName?: string | null;
+  zohoContactId?: string | null;
+  zohoBillId?: string | null;
 }): Promise<{ zoho_payment_id?: string; error?: string }> {
   try {
     const res = await fetch('/api/zoho/payments', {
@@ -1442,7 +1447,11 @@ export async function syncVendorPaymentToZoho(params: {
         amount: params.amount,
         payment_date: params.paymentDate,
         reference_no: params.referenceNo,
-        notes: params.notes
+        notes: params.notes,
+        company_id: params.companyId,
+        vendor_name: params.vendorName,
+        zoho_contact_id: params.zohoContactId,
+        zoho_bill_id: params.zohoBillId
       })
     });
     const data = await res.json();
@@ -1483,6 +1492,9 @@ export async function addPaymentRecord(
   let zohoPaymentId = payment.zoho_payment_id || null;
   let zohoSyncedAt = payment.zoho_synced_at || null;
 
+  // Retrieve payable info to supply company and vendor identifiers for Zoho Books
+  const payableObj = await getPayableById(payment.payable_id);
+
   // If syncZoho is true and not already provided, attempt sync with Zoho Books
   if (options.syncZoho !== false && !zohoPaymentId && typeof window !== 'undefined') {
     try {
@@ -1491,7 +1503,11 @@ export async function addPaymentRecord(
         amount: payment.amount,
         paymentDate: payment.payment_date,
         referenceNo: payment.reference_no,
-        notes: payment.notes
+        notes: payment.notes,
+        companyId: payableObj?.company_id,
+        vendorName: payableObj?.vendor_name || payableObj?.title,
+        zohoContactId: payableObj?.zoho_contact_id,
+        zohoBillId: payableObj?.zoho_bill_id
       });
       if (zohoRes.zoho_payment_id) {
         zohoPaymentId = zohoRes.zoho_payment_id;
@@ -1788,7 +1804,8 @@ async function recalculatePayableStatusAndPaidAmount(payableId: string): Promise
   const updated = await updatePayable(payableId, {
     status: newStatus,
     paid_amount: totalPaid > 0 ? totalPaid : null,
-    payment_date: latestPaymentDate
+    payment_date: latestPaymentDate,
+    skipHistorySync: true
   });
 
   return updated;

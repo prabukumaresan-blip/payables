@@ -204,6 +204,7 @@ export interface Payable {
   updated_at: string;
   zoho_bill_id?: string | null;
   zoho_bill_number?: string | null;
+  zoho_contact_id?: string | null;
   company?: Company | null;
   pdc?: PDC | null;
   loan?: LoanSchedule | null;
