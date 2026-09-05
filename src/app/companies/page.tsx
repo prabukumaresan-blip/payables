@@ -49,6 +49,7 @@ function CompaniesContent() {
     subtitle: string;
     cr_number: string;
     tax_number: string;
+    zoho_organization_id: string;
     color: string;
   }>({
     name: '',
@@ -56,6 +57,7 @@ function CompaniesContent() {
     subtitle: '',
     cr_number: '',
     tax_number: '',
+    zoho_organization_id: '',
     color: 'indigo',
   });
 
@@ -115,6 +117,7 @@ function CompaniesContent() {
         subtitle: company.subtitle || '',
         cr_number: company.cr_number || '',
         tax_number: company.tax_number || '',
+        zoho_organization_id: company.zoho_organization_id || '',
         color: company.color || 'indigo',
       });
     } else {
@@ -125,6 +128,7 @@ function CompaniesContent() {
         subtitle: 'Trading LLC',
         cr_number: '',
         tax_number: '',
+        zoho_organization_id: '',
         color: 'indigo',
       });
     }
@@ -148,6 +152,7 @@ function CompaniesContent() {
           subtitle: companyForm.subtitle.trim(),
           cr_number: companyForm.cr_number.trim() || null,
           tax_number: companyForm.tax_number.trim() || null,
+          zoho_organization_id: companyForm.zoho_organization_id.trim() || null,
           color: companyForm.color,
         });
       } else {
@@ -157,6 +162,7 @@ function CompaniesContent() {
           subtitle: companyForm.subtitle.trim(),
           cr_number: companyForm.cr_number.trim() || null,
           tax_number: companyForm.tax_number.trim() || null,
+          zoho_organization_id: companyForm.zoho_organization_id.trim() || null,
           color: companyForm.color,
           is_active: true,
           bank_accounts: [
@@ -378,6 +384,10 @@ function CompaniesContent() {
                             VAT/Tax: <strong className="text-slate-700 font-mono">{company.tax_number}</strong>
                           </span>
                         )}
+                        <span className="flex items-center gap-1">
+                          <Building2 className="h-3.5 w-3.5 text-indigo-500" />
+                          Zoho Org ID: <strong className="text-indigo-700 font-mono font-semibold">{company.zoho_organization_id || '771750431 (Default)'}</strong>
+                        </span>
                         <span className="flex items-center gap-1 text-indigo-650 font-medium">
                           <Layers className="h-3.5 w-3.5 text-indigo-500" />
                           {stats.count} Payables ({formatOMR(stats.totalAmount)})
@@ -617,6 +627,22 @@ function CompaniesContent() {
                       className="w-full mt-1 rounded-lg border border-slate-200 bg-white py-2 px-3 text-xs font-mono text-slate-800 outline-none focus:border-indigo-500"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    Zoho Books Organization ID
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.zoho_organization_id}
+                    onChange={(e) => setCompanyForm(prev => ({ ...prev, zoho_organization_id: e.target.value }))}
+                    placeholder="e.g. 771750431"
+                    className="w-full mt-1 rounded-lg border border-slate-200 bg-white py-2 px-3 text-xs font-mono text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Syncs bills, vendors, and payments specifically for this company's Zoho Books account.
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">

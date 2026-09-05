@@ -156,19 +156,30 @@ export async function getZohoAccessToken(): Promise<string> {
   return cachedAccessToken;
 }
 
+export interface ZohoOrganization {
+  organization_id: string;
+  name: string;
+  currency_code?: string;
+  is_default_org?: boolean;
+}
+
 /**
  * Make an authenticated API request to Zoho Books
  */
 export async function zohoRequest<T>(
   endpoint: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  body?: any
+  body?: any,
+  customOrgId?: string | null
 ): Promise<T> {
   const config = getZohoConfig();
   const token = await getZohoAccessToken();
+  const orgId = customOrgId || config.organizationId;
 
   const separator = endpoint.includes('?') ? '&' : '?';
-  const url = `${config.apiUrl}${endpoint}${separator}organization_id=${config.organizationId}`;
+  // If endpoint is /organizations, organization_id is not required
+  const orgQuery = endpoint.startsWith('/organizations') ? '' : `${separator}organization_id=${orgId}`;
+  const url = `${config.apiUrl}${endpoint}${orgQuery}`;
 
   const headers: Record<string, string> = {
     Authorization: `Zoho-oauthtoken ${token}`,
@@ -191,9 +202,35 @@ export async function zohoRequest<T>(
 }
 
 /**
+ * Fetch all Zoho Organizations accessible by the current token
+ */
+export async function fetchZohoOrganizations(): Promise<ZohoOrganization[]> {
+  try {
+    const res = await zohoRequest<{
+      code: number;
+      message: string;
+      organizations: any[];
+    }>('/organizations', 'GET');
+
+    if (res.organizations && res.organizations.length > 0) {
+      return res.organizations.map((org) => ({
+        organization_id: String(org.organization_id),
+        name: org.name || org.organization_name || '',
+        currency_code: org.currency_code || 'OMR',
+        is_default_org: Boolean(org.is_default_org)
+      }));
+    }
+    return [];
+  } catch (err) {
+    console.warn('Could not fetch Zoho organizations list:', err);
+    return [];
+  }
+}
+
+/**
  * Fetch all Vendors from Zoho Books with their outstanding payable balances converted to OMR
  */
-export async function fetchZohoVendors(): Promise<ZohoVendor[]> {
+export async function fetchZohoVendors(organizationId?: string | null): Promise<ZohoVendor[]> {
   let allVendors: ZohoVendor[] = [];
   let page = 1;
   let hasMore = true;
@@ -204,7 +241,7 @@ export async function fetchZohoVendors(): Promise<ZohoVendor[]> {
       message: string;
       contacts: any[];
       page_context?: { has_more_page: boolean; page: number };
-    }>(`/contacts?contact_type=vendor&status=all&page=${page}&per_page=200`);
+    }>(`/contacts?contact_type=vendor&status=all&page=${page}&per_page=200`, 'GET', undefined, organizationId);
 
     if (res.contacts && res.contacts.length > 0) {
       const mapped: ZohoVendor[] = res.contacts.map((c) => {
@@ -252,7 +289,7 @@ export async function fetchZohoVendors(): Promise<ZohoVendor[]> {
 /**
  * Fetch all unpaid or partially paid Bills from Zoho Books converted to OMR
  */
-export async function fetchZohoUnpaidBills(): Promise<ZohoBill[]> {
+export async function fetchZohoUnpaidBills(organizationId?: string | null): Promise<ZohoBill[]> {
   let allBills: ZohoBill[] = [];
   let page = 1;
   let hasMore = true;
@@ -264,7 +301,7 @@ export async function fetchZohoUnpaidBills(): Promise<ZohoBill[]> {
       message: string;
       bills: any[];
       page_context?: { has_more_page: boolean; page: number };
-    }>(`/bills?status=unpaid&page=${page}&per_page=200`);
+    }>(`/bills?status=unpaid&page=${page}&per_page=200`, 'GET', undefined, organizationId);
 
     if (res.bills && res.bills.length > 0) {
       const mapped: ZohoBill[] = res.bills.map((b) => {
@@ -318,6 +355,7 @@ export interface RecordZohoPaymentParams {
   notes?: string | null;
   paymentMode?: string;
   paidThroughAccountId?: string;
+  organizationId?: string | null;
 }
 
 export interface ZohoVendorPaymentResult {
@@ -346,7 +384,7 @@ export async function recordZohoVendorPayment(
     description: params.notes || 'Payment recorded via Payables Tracker'
   };
 
-  // Default paid_through_account_id to Bank Muscat Corparate Account (3095712000000075328) if not explicitly passed
+  // Default paid_through_account_id to Bank Muscat Corporate Account if not explicitly passed
   payload.paid_through_account_id = params.paidThroughAccountId || '3095712000000075328';
 
   if (params.billId) {
@@ -363,7 +401,7 @@ export async function recordZohoVendorPayment(
     message: string;
     vendorpayment?: any;
     payment?: any;
-  }>('/vendorpayments', 'POST', payload);
+  }>('/vendorpayments', 'POST', payload, params.organizationId);
 
   const paymentData = res.vendorpayment || res.payment || {};
 
@@ -380,16 +418,17 @@ export async function recordZohoVendorPayment(
 /**
  * Delete a vendor payment in Zoho Books
  */
-export async function deleteZohoVendorPayment(paymentId: string): Promise<boolean> {
+export async function deleteZohoVendorPayment(paymentId: string, organizationId?: string | null): Promise<boolean> {
   if (!paymentId) return false;
   try {
     const res = await zohoRequest<{
       code: number;
       message: string;
-    }>(`/vendorpayments/${paymentId}`, 'DELETE');
+    }>(`/vendorpayments/${paymentId}`, 'DELETE', undefined, organizationId);
     return res.code === 0;
   } catch (err: any) {
     console.error(`Failed to delete Zoho payment ${paymentId}:`, err);
     throw err;
   }
 }
+

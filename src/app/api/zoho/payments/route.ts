@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { payable_id, vendor_name, amount, payment_date, reference_no, notes, zoho_contact_id, zoho_bill_id } = body;
+    const { payable_id, company_id, organization_id, vendor_name, amount, payment_date, reference_no, notes, zoho_contact_id, zoho_bill_id } = body;
 
     if (!amount || amount <= 0) {
       return NextResponse.json(
@@ -45,9 +45,10 @@ export async function POST(req: NextRequest) {
     let targetVendorContactId = zoho_contact_id || null;
     let targetBillId = zoho_bill_id || null;
     let targetVendorName = vendor_name || '';
+    let targetOrgId = organization_id || null;
 
     // If payable_id is provided and we don't have all Zoho details, look it up
-    if (payable_id && (!targetVendorContactId || !targetBillId)) {
+    if (payable_id) {
       if (supabase) {
         const { data: payable } = await supabase
           .from('payables')
@@ -64,14 +65,41 @@ export async function POST(req: NextRequest) {
               if (match) targetBillId = match[1];
             }
           }
+          if (!targetOrgId && payable.company_id) {
+            const { data: company } = await supabase
+              .from('companies')
+              .select('zoho_organization_id')
+              .eq('id', payable.company_id)
+              .single();
+            if (company?.zoho_organization_id) {
+              targetOrgId = company.zoho_organization_id;
+            }
+          }
         }
       }
+    }
+
+    // If company_id was explicitly provided and we still don't have targetOrgId
+    if (company_id && !targetOrgId && supabase) {
+      const { data: company } = await supabase
+        .from('companies')
+        .select('zoho_organization_id')
+        .eq('id', company_id)
+        .single();
+      if (company?.zoho_organization_id) {
+        targetOrgId = company.zoho_organization_id;
+      }
+    }
+
+    // Default to config organization if still not resolved
+    if (!targetOrgId) {
+      targetOrgId = config.organizationId;
     }
 
     // If vendor contact ID is still not found, try matching by vendor name from Zoho vendors
     if (!targetVendorContactId && targetVendorName) {
       try {
-        const zohoVendors = await fetchZohoVendors();
+        const zohoVendors = await fetchZohoVendors(targetOrgId);
         const rawSearch = targetVendorName.toLowerCase().trim();
         
         const normalize = (s: string) => (s || '')
@@ -141,7 +169,8 @@ export async function POST(req: NextRequest) {
       amount: Number(amount),
       paymentDate: payment_date || new Date().toISOString().substring(0, 10),
       referenceNo: reference_no || undefined,
-      notes: notes || `Payment recorded for ${targetVendorName}`
+      notes: notes || `Payment recorded for ${targetVendorName}`,
+      organizationId: targetOrgId
     });
 
     return NextResponse.json({
@@ -152,7 +181,8 @@ export async function POST(req: NextRequest) {
         amount: zohoPayment.amount,
         date: zohoPayment.date,
         bill_id: targetBillId,
-        vendor_id: targetVendorContactId
+        vendor_id: targetVendorContactId,
+        organization_id: targetOrgId
       }
     });
   } catch (error: any) {
@@ -186,6 +216,7 @@ export async function DELETE(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const paymentId = searchParams.get('payment_id');
+    const orgId = searchParams.get('organization_id') || config.organizationId;
 
     if (!paymentId) {
       return NextResponse.json(
@@ -194,7 +225,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    await deleteZohoVendorPayment(paymentId);
+    await deleteZohoVendorPayment(paymentId, orgId);
 
     return NextResponse.json({
       success: true,
@@ -211,3 +242,4 @@ export async function DELETE(req: NextRequest) {
     );
   }
 }
+

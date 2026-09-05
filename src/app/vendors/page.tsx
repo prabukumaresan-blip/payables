@@ -354,7 +354,32 @@ function VendorsContent() {
     setZohoSyncing(true);
     setZohoSyncMessage(null);
     try {
-      const res = await fetch('/api/zoho/sync', { method: 'POST' });
+      // Find active company if any
+      let companyIdToSend: string | null = null;
+      let organizationIdToSend: string | null = null;
+      if (typeof window !== 'undefined') {
+        const storedCompanies = localStorage.getItem('payables_tracker_v2_companies');
+        const activeCompId = localStorage.getItem('payables_tracker_v2_selected_company_id');
+        if (storedCompanies && activeCompId && activeCompId !== 'ALL') {
+          try {
+            const comps = JSON.parse(storedCompanies);
+            const activeC = comps.find((c: any) => c.id === activeCompId);
+            if (activeC) {
+              companyIdToSend = activeC.id;
+              organizationIdToSend = activeC.zoho_organization_id || null;
+            }
+          } catch {}
+        }
+      }
+
+      const res = await fetch('/api/zoho/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: companyIdToSend,
+          organization_id: organizationIdToSend
+        })
+      });
       const data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -368,7 +393,7 @@ function VendorsContent() {
 
       setZohoSyncMessage({
         type: 'success',
-        text: `Zoho Books Synced! (${data.data.totalZohoVendors} vendors updated, ${data.data.syncedBillsCount} bills synced)`
+        text: `Zoho Books Synced (Org ID: ${data.data?.organizationId || 'Default'})! (${data.data.totalZohoVendors} vendors, ${data.data.syncedBillsCount} bills)`
       });
 
       await loadData();

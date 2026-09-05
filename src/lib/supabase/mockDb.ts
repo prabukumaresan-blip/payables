@@ -20,6 +20,7 @@ export interface Company {
   cr_number?: string | null;
   logo_url?: string | null;
   color?: string | null;
+  zoho_organization_id?: string | null;
   is_active: boolean;
   bank_accounts: CompanyBankAccount[];
   created_at?: string;
@@ -34,6 +35,7 @@ export const SEEDED_COMPANIES: Company[] = [
     tax_number: 'OM1100234567',
     cr_number: '1249823',
     color: 'indigo',
+    zoho_organization_id: '771750431',
     is_active: true,
     bank_accounts: [
       {

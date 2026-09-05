@@ -50,7 +50,14 @@ export default function TopBar({ title, showMonthSelector = true, onMenuClick }:
     if (zohoStatus.syncing) return;
     setZohoStatus(prev => ({ ...prev, syncing: true, message: undefined }));
     try {
-      const res = await fetch('/api/zoho/sync', { method: 'POST' });
+      const res = await fetch('/api/zoho/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: selectedCompany?.id || null,
+          organization_id: selectedCompany?.zoho_organization_id || null
+        })
+      });
       const data = await res.json();
       if (data.success) {
         const timeStr = format(new Date(), 'hh:mm a');
@@ -58,7 +65,7 @@ export default function TopBar({ title, showMonthSelector = true, onMenuClick }:
           ...prev,
           syncing: false,
           lastSynced: timeStr,
-          message: `Synced ${data.data?.syncedBillsCount || 0} bills & ${data.data?.totalZohoVendors || 0} vendors`
+          message: `Synced ${data.data?.syncedBillsCount || 0} bills & ${data.data?.totalZohoVendors || 0} vendors (Org: ${data.data?.organizationId || 'Default'})`
         }));
         router.refresh();
       } else {

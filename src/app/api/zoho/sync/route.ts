@@ -23,11 +23,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Fetch live Zoho Vendors & Balances
-    const zohoVendors = await fetchZohoVendors();
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
 
-    // 2. Fetch live Zoho Unpaid Bills
-    const zohoBills = await fetchZohoUnpaidBills();
+    const { company_id, organization_id } = body;
+    const targetOrgId = organization_id || config.organizationId;
+    const targetCompanyId = company_id || null;
+
+    // 1. Fetch live Zoho Vendors & Balances for target org
+    const zohoVendors = await fetchZohoVendors(targetOrgId);
+
+    // 2. Fetch live Zoho Unpaid Bills for target org
+    const zohoBills = await fetchZohoUnpaidBills(targetOrgId);
 
     const supabase = getSupabaseAdmin();
     const now = new Date().toISOString();
@@ -38,13 +49,13 @@ export async function POST(req: NextRequest) {
     let vendorsToUpsert: any[] = [];
     let payablesToUpsert: any[] = [];
 
-    const vendorSyncResults: any[] = [];
-
     if (supabase) {
       // 3. Fetch existing Supabase vendors
-      const { data: existingVendors, error: vendorFetchError } = await supabase
-        .from('vendors')
-        .select('*');
+      let vendorQuery = supabase.from('vendors').select('*');
+      if (targetCompanyId) {
+        vendorQuery = vendorQuery.or(`company_id.eq.${targetCompanyId},company_id.is.null`);
+      }
+      const { data: existingVendors, error: vendorFetchError } = await vendorQuery;
 
       if (vendorFetchError) {
         throw new Error(`Failed to fetch vendors from Supabase: ${vendorFetchError.message}`);
@@ -77,6 +88,7 @@ export async function POST(req: NextRequest) {
             outstanding_payable_amount: zv.outstanding_payable_amount,
             unused_credits_payable_amount: zv.unused_credits_payable_amount,
             zoho_last_synced_at: now,
+            company_id: match.company_id || targetCompanyId,
             created_at: match.created_at || now
           };
         } else {
@@ -95,6 +107,7 @@ export async function POST(req: NextRequest) {
             outstanding_payable_amount: zv.outstanding_payable_amount,
             unused_credits_payable_amount: zv.unused_credits_payable_amount,
             zoho_last_synced_at: now,
+            company_id: targetCompanyId,
             created_at: now
           };
         }
@@ -113,6 +126,11 @@ export async function POST(req: NextRequest) {
           swift_code: v.swift_code || null,
           bank_type: v.bank_type || 'BANK_MUSCAT',
           bank_account: v.bank_account || null,
+          zoho_contact_id: v.zoho_contact_id || null,
+          outstanding_payable_amount: v.outstanding_payable_amount || 0,
+          unused_credits_payable_amount: v.unused_credits_payable_amount || 0,
+          zoho_last_synced_at: v.zoho_last_synced_at || now,
+          company_id: v.company_id || null,
           created_at: v.created_at || now
         }));
         const { error: upsertErr } = await supabase.from('vendors').upsert(chunk, { onConflict: 'id' });
@@ -123,9 +141,11 @@ export async function POST(req: NextRequest) {
       updatedVendorsCount = vendorsToUpsert.length;
 
       // 5. Fetch existing Payables for matching
-      const { data: existingPayablesData } = await supabase
-        .from('payables')
-        .select('*');
+      let payablesQuery = supabase.from('payables').select('*');
+      if (targetCompanyId) {
+        payablesQuery = payablesQuery.or(`company_id.eq.${targetCompanyId},company_id.is.null`);
+      }
+      const { data: existingPayablesData } = await payablesQuery;
       const existingPayablesList = existingPayablesData || [];
 
       // Map unpaid Zoho bills by bill_id
@@ -157,6 +177,7 @@ export async function POST(req: NextRequest) {
 
           const item: any = {
             id: match ? match.id : crypto.randomUUID(),
+            company_id: match?.company_id || targetCompanyId,
             title: `Bill #${bill.bill_number} - ${bill.vendor_name}`,
             category_id: match?.category_id || 'cat-1', // Vendor Payment
             vendor_name: bill.vendor_name,
@@ -168,6 +189,8 @@ export async function POST(req: NextRequest) {
             paid_amount: paidAmount,
             recurrence: 'once',
             reference_no: bill.bill_number,
+            zoho_bill_id: bill.bill_id,
+            zoho_bill_number: bill.bill_number,
             notes: notesTag,
             created_at: match?.created_at || now,
             updated_at: now
@@ -228,7 +251,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        organizationId: config.organizationId,
+        organizationId: targetOrgId,
+        companyId: targetCompanyId,
         totalZohoVendors: zohoVendors.length,
         totalZohoBills: zohoBills.length,
         updatedVendorsCount,
@@ -250,3 +274,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
