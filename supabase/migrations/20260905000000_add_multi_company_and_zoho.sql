@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS companies (
 -- Seed initial companies
 INSERT INTO companies (id, name, short_name, subtitle, tax_number, cr_number, color, zoho_organization_id, is_active) VALUES
   ('comp-1', 'BRIGHT FLOWERS TRADING LLC', 'Bright Flowers', 'Trading LLC', 'OM1100234567', '1249823', 'indigo', '771750431', true),
-  ('comp-2', 'DESERT BLOOM LOGISTICS LLC', 'Desert Bloom', 'Logistics LLC', 'OM1100987654', '1388412', 'emerald', null, true),
-  ('comp-3', 'GULF PETALS ENTERPRISES SPC', 'Gulf Petals', 'Enterprises SPC', 'OM1100554433', '1499201', 'violet', null, true)
+  ('comp-2', 'DESERT BLOOM LOGISTICS LLC', 'Desert Bloom', 'Logistics LLC', 'OM1100987654', '1388412', 'emerald', '1234567890', true),
+  ('comp-3', 'GULF PETALS ENTERPRISES SPC', 'Gulf Petals', 'Enterprises SPC', 'OM1100554433', '1499201', 'violet', '789456123', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Create Company Bank Accounts Table
