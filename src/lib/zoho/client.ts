@@ -440,6 +440,7 @@ export interface ZohoBankAccount {
   account_id: string;
   account_name: string;
   account_type: string;
+  is_active?: boolean;
 }
 
 export async function fetchZohoBankAccounts(organizationId?: string | null): Promise<ZohoBankAccount[]> {
