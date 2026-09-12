@@ -110,8 +110,21 @@ export async function POST(req: NextRequest) {
         const bankAccounts = await fetchZohoBankAccounts(targetOrgId);
         const rawSearch = targetVendorName.toLowerCase().trim();
         
+        // 1. Exact Match
         let matchedAccount = bankAccounts.find(a => a.account_name.toLowerCase().trim() === rawSearch);
         
+        // 2. Multi-Keyword Match (prioritize over loose substring)
+        if (!matchedAccount) {
+          const keywords = rawSearch.split(/\s+/).filter(k => k.length >= 3);
+          if (keywords.length > 0) {
+            matchedAccount = bankAccounts.find(a => {
+              const accountName = a.account_name.toLowerCase();
+              return keywords.every(k => accountName.includes(k));
+            });
+          }
+        }
+
+        // 3. Loose Substring Match
         if (!matchedAccount) {
           matchedAccount = bankAccounts.find(a => 
             a.account_name.toLowerCase().includes(rawSearch) ||
@@ -120,6 +133,13 @@ export async function POST(req: NextRequest) {
         }
         
         if (matchedAccount) {
+          if (!matchedAccount.is_active) {
+            return NextResponse.json(
+              { success: false, error: `The Zoho Books account "${matchedAccount.account_name}" is currently inactive. Please activate it in Zoho Books before syncing payments.` },
+              { status: 400 }
+            );
+          }
+
           const fromAccountId = '3095712000000075328'; // Default Bank Muscat Corporate
           const transfer = await recordZohoBankTransfer({
             fromAccountId,
@@ -134,18 +154,22 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({
             success: true,
             data: {
-              zoho_payment_id: transfer.banktransfer_id,
-              payment_number: transfer.reference_number || `BT-${transfer.banktransfer_id || ''}`,
-              amount: transfer.amount,
-              date: transfer.date,
+              zoho_payment_id: transfer.transaction_id || transfer.banktransaction_id,
+              payment_number: transfer.reference_number || `BT-${transfer.transaction_id || transfer.banktransaction_id || ''}`,
+              amount: transfer.amount || amount,
+              date: transfer.date || payment_date,
               bill_id: targetBillId,
               vendor_id: matchedAccount.account_id,
               organization_id: targetOrgId
             }
           });
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('Could not process petty cash transfer:', e);
+        return NextResponse.json(
+          { success: false, error: e.message || 'Failed to record bank transfer in Zoho Books' },
+          { status: 500 }
+        );
       }
     }
 

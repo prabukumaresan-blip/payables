@@ -465,6 +465,7 @@ export async function recordZohoBankTransfer(params: RecordZohoBankTransferParam
     to_account_id: params.toAccountId,
     amount: Number(Number(params.amount).toFixed(3)),
     date: params.date,
+    transaction_type: 'transfer_fund',
     description: params.description || 'Transfer recorded via Payables Tracker'
   };
 
@@ -473,11 +474,11 @@ export async function recordZohoBankTransfer(params: RecordZohoBankTransferParam
   }
 
   const res = await zohoRequest<{
-    banktransfer?: any;
+    banktransaction?: any;
     code: number;
     message: string;
-  }>('/banktransfers', 'POST', payload, params.organizationId);
+  }>('/banktransactions', 'POST', payload, params.organizationId);
 
-  return res.banktransfer || {};
+  return res.banktransaction || {};
 }
 
