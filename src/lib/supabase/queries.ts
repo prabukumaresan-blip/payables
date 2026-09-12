@@ -1695,6 +1695,7 @@ async function syncPaymentHistoryOnStatusChange(
   newPaidAmount: number | null | undefined,
   paymentDate: string | null
 ): Promise<{ newPaidAmount: number | null; newPaymentDate: string | null }> {
+  const payable = await getPayableById(payableId);
   const payments = await getPaymentHistory(payableId);
   const sum = payments.reduce((s, p) => s + Number(p.amount), 0);
 
@@ -1714,11 +1715,11 @@ async function syncPaymentHistoryOnStatusChange(
             amount: diff,
             paymentDate: pDate,
             notes: 'Full payment status update',
-            categoryId: payable.category_id,
-            companyId: payable.company_id,
-            vendorName: payable.vendor_name || payable.title,
-            zohoContactId: payable.zoho_contact_id,
-            zohoBillId: payable.zoho_bill_id
+            categoryId: payable?.category_id,
+            companyId: payable?.company_id,
+            vendorName: payable?.vendor_name || payable?.title,
+            zohoContactId: payable?.zoho_contact_id,
+            zohoBillId: payable?.zoho_bill_id
           });
           if (zohoRes.zoho_payment_id) {
             zohoPaymentId = zohoRes.zoho_payment_id;
@@ -1762,11 +1763,11 @@ async function syncPaymentHistoryOnStatusChange(
               amount: newPaidAmount,
               paymentDate: pDate,
               notes: 'Status update sync',
-              categoryId: payable.category_id,
-              companyId: payable.company_id,
-              vendorName: payable.vendor_name || payable.title,
-              zohoContactId: payable.zoho_contact_id,
-              zohoBillId: payable.zoho_bill_id
+              categoryId: payable?.category_id,
+              companyId: payable?.company_id,
+              vendorName: payable?.vendor_name || payable?.title,
+              zohoContactId: payable?.zoho_contact_id,
+              zohoBillId: payable?.zoho_bill_id
             });
             if (zohoRes.zoho_payment_id) {
               zohoPaymentId = zohoRes.zoho_payment_id;
