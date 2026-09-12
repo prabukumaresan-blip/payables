@@ -1713,7 +1713,12 @@ async function syncPaymentHistoryOnStatusChange(
             payableId,
             amount: diff,
             paymentDate: pDate,
-            notes: 'Full payment status update'
+            notes: 'Full payment status update',
+            categoryId: payable.category_id,
+            companyId: payable.company_id,
+            vendorName: payable.vendor_name || payable.title,
+            zohoContactId: payable.zoho_contact_id,
+            zohoBillId: payable.zoho_bill_id
           });
           if (zohoRes.zoho_payment_id) {
             zohoPaymentId = zohoRes.zoho_payment_id;
@@ -1756,7 +1761,12 @@ async function syncPaymentHistoryOnStatusChange(
               payableId,
               amount: newPaidAmount,
               paymentDate: pDate,
-              notes: 'Status update sync'
+              notes: 'Status update sync',
+              categoryId: payable.category_id,
+              companyId: payable.company_id,
+              vendorName: payable.vendor_name || payable.title,
+              zohoContactId: payable.zoho_contact_id,
+              zohoBillId: payable.zoho_bill_id
             });
             if (zohoRes.zoho_payment_id) {
               zohoPaymentId = zohoRes.zoho_payment_id;
