@@ -137,6 +137,14 @@ export async function POST(req: NextRequest) {
           );
         }
         
+        // 4. Fallback to generic Petty Cash account
+        if (!matchedAccount) {
+          matchedAccount = bankAccounts.find(a => 
+            a.account_name.toLowerCase() === 'petty cash' || 
+            a.account_name.toLowerCase() === 'petty cash account'
+          );
+        }
+        
         if (!matchedAccount) {
           return NextResponse.json(
             { success: false, error: `No active matching Petty Cash bank account found for "${targetVendorName}". Please ensure a corresponding bank/cash account is created and active in Zoho Books.` },
