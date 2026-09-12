@@ -436,3 +436,48 @@ export async function deleteZohoVendorPayment(paymentId: string, organizationId?
   }
 }
 
+export interface ZohoBankAccount {
+  account_id: string;
+  account_name: string;
+  account_type: string;
+}
+
+export async function fetchZohoBankAccounts(organizationId?: string | null): Promise<ZohoBankAccount[]> {
+  const res = await zohoRequest<{
+    bankaccounts: ZohoBankAccount[];
+  }>('/bankaccounts', 'GET', undefined, organizationId);
+  return res.bankaccounts || [];
+}
+
+export interface RecordZohoBankTransferParams {
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  date: string;
+  referenceNumber?: string;
+  description?: string;
+  organizationId?: string | null;
+}
+
+export async function recordZohoBankTransfer(params: RecordZohoBankTransferParams) {
+  const payload: any = {
+    from_account_id: params.fromAccountId,
+    to_account_id: params.toAccountId,
+    amount: Number(Number(params.amount).toFixed(3)),
+    date: params.date,
+    description: params.description || 'Transfer recorded via Payables Tracker'
+  };
+
+  if (params.referenceNumber) {
+    payload.reference_number = params.referenceNumber;
+  }
+
+  const res = await zohoRequest<{
+    banktransfer?: any;
+    code: number;
+    message: string;
+  }>('/banktransfers', 'POST', payload, params.organizationId);
+
+  return res.banktransfer || {};
+}
+

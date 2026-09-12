@@ -3,7 +3,9 @@ import {
   getZohoConfig, 
   recordZohoVendorPayment, 
   deleteZohoVendorPayment, 
-  fetchZohoVendors 
+  fetchZohoVendors,
+  fetchZohoBankAccounts,
+  recordZohoBankTransfer
 } from '@/lib/zoho/client';
 import { createClient as createSupabaseServerClient } from '@supabase/supabase-js';
 
@@ -102,6 +104,51 @@ export async function POST(req: NextRequest) {
       targetOrgId = config.organizationId;
     }
 
+    // Check if it's a petty cash payment that should be recorded as a bank transfer
+    if (targetVendorName.toLowerCase().includes('petty cash')) {
+      try {
+        const bankAccounts = await fetchZohoBankAccounts(targetOrgId);
+        const rawSearch = targetVendorName.toLowerCase().trim();
+        
+        let matchedAccount = bankAccounts.find(a => a.account_name.toLowerCase().trim() === rawSearch);
+        
+        if (!matchedAccount) {
+          matchedAccount = bankAccounts.find(a => 
+            a.account_name.toLowerCase().includes(rawSearch) ||
+            rawSearch.includes(a.account_name.toLowerCase())
+          );
+        }
+        
+        if (matchedAccount) {
+          const fromAccountId = '3095712000000075328'; // Default Bank Muscat Corporate
+          const transfer = await recordZohoBankTransfer({
+            fromAccountId,
+            toAccountId: matchedAccount.account_id,
+            amount: Number(amount),
+            date: payment_date || new Date().toISOString().substring(0, 10),
+            referenceNumber: reference_no || undefined,
+            description: notes || `Petty cash transfer to ${targetVendorName}`,
+            organizationId: targetOrgId
+          });
+
+          return NextResponse.json({
+            success: true,
+            data: {
+              zoho_payment_id: transfer.banktransfer_id,
+              payment_number: transfer.reference_number || `BT-${transfer.banktransfer_id || ''}`,
+              amount: transfer.amount,
+              date: transfer.date,
+              bill_id: targetBillId,
+              vendor_id: matchedAccount.account_id,
+              organization_id: targetOrgId
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Could not process petty cash transfer:', e);
+      }
+    }
+
     // If vendor contact ID is still not found, try matching by vendor name from Zoho vendors
     if (!targetVendorContactId && targetVendorName) {
       try {
@@ -111,24 +158,31 @@ export async function POST(req: NextRequest) {
         const normalize = (s: string) => (s || '')
           .toLowerCase()
           .replace(/[^a-z0-9]/g, ' ')
-          .replace(/\b(llc|l\.l\.c|trading|co|company|corp|corporation|transport|equipments|for|petty|cash|services|est|establishment)\b/g, '')
+          .replace(/\b(llc|l\.l\.c|trading|co|company|corp|corporation|transport|equipments|for|services|est|establishment)\b/g, '')
           .replace(/\s+/g, ' ')
           .trim();
 
         const normSearch = normalize(targetVendorName);
 
-        // 1. Exact match or direct substring
+        // 1. Exact match
         let matchedZv = zohoVendors.find(
           zv =>
             zv.contact_name.toLowerCase().trim() === rawSearch ||
-            (zv.company_name && zv.company_name.toLowerCase().trim() === rawSearch) ||
-            zv.contact_name.toLowerCase().trim().includes(rawSearch) ||
-            (zv.company_name && zv.company_name.toLowerCase().trim().includes(rawSearch)) ||
-            rawSearch.includes(zv.contact_name.toLowerCase().trim()) ||
-            (zv.company_name && rawSearch.includes(zv.company_name.toLowerCase().trim()))
+            (zv.company_name && zv.company_name.toLowerCase().trim() === rawSearch)
         );
 
-        // 2. Normalized token matching
+        // 2. Direct substring match
+        if (!matchedZv) {
+          matchedZv = zohoVendors.find(
+            zv =>
+              zv.contact_name.toLowerCase().trim().includes(rawSearch) ||
+              (zv.company_name && zv.company_name.toLowerCase().trim().includes(rawSearch)) ||
+              rawSearch.includes(zv.contact_name.toLowerCase().trim()) ||
+              (zv.company_name && rawSearch.includes(zv.company_name.toLowerCase().trim()))
+          );
+        }
+
+        // 3. Normalized token matching
         if (!matchedZv && normSearch.length >= 3) {
           matchedZv = zohoVendors.find(zv => {
             const cNorm = normalize(zv.contact_name);
