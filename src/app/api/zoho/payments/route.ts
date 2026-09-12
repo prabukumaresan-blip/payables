@@ -120,11 +120,11 @@ export async function POST(req: NextRequest) {
         
         // 2. Multi-Keyword Match (prioritize over loose substring)
         if (!matchedAccount) {
-          const keywords = rawSearch.split(/\s+/).filter(k => k.length >= 3);
+          const keywords = rawSearch.split(/\s+/).filter((k: string) => k.length >= 3);
           if (keywords.length > 0) {
             matchedAccount = bankAccounts.find(a => {
               const accountName = a.account_name.toLowerCase();
-              return keywords.every(k => accountName.includes(k));
+              return keywords.every((k: string) => accountName.includes(k));
             });
           }
         }
