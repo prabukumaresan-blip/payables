@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
     let targetBillId = zoho_bill_id || null;
     let targetVendorName = vendor_name || '';
     let targetOrgId = organization_id || null;
+    let targetCategoryId = null;
 
     // If payable_id is provided and we don't have all Zoho details, look it up
     if (payable_id) {
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (payable) {
+          targetCategoryId = payable.category_id;
           if (!targetVendorName) targetVendorName = payable.vendor_name || payable.title;
           if (!targetBillId) {
             targetBillId = payable.zoho_bill_id || null;
@@ -104,8 +106,8 @@ export async function POST(req: NextRequest) {
       targetOrgId = config.organizationId;
     }
 
-    // Check if it's a petty cash payment that should be recorded as a bank transfer
-    if (targetVendorName.toLowerCase().includes('petty cash')) {
+    // Check if it's a petty cash payment (Category ID 'cat-5' or fallback to name check) that should be recorded as a bank transfer
+    if (targetCategoryId === 'cat-5' || (!targetCategoryId && targetVendorName.toLowerCase().includes('petty cash'))) {
       try {
         const bankAccounts = await fetchZohoBankAccounts(targetOrgId);
         const rawSearch = targetVendorName.toLowerCase().trim();
