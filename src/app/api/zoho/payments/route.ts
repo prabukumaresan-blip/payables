@@ -111,7 +111,8 @@ export async function POST(req: NextRequest) {
     
     if (isPettyCash) {
       try {
-        const bankAccounts = await fetchZohoBankAccounts(targetOrgId);
+        const allBankAccounts = await fetchZohoBankAccounts(targetOrgId);
+        const bankAccounts = allBankAccounts.filter(a => a.is_active);
         const rawSearch = targetVendorName.toLowerCase().trim();
         
         // 1. Exact Match
@@ -138,15 +139,8 @@ export async function POST(req: NextRequest) {
         
         if (!matchedAccount) {
           return NextResponse.json(
-            { success: false, error: `No matching Petty Cash bank account found for "${targetVendorName}". Please ensure a corresponding bank/cash account exists in Zoho Books.` },
+            { success: false, error: `No active matching Petty Cash bank account found for "${targetVendorName}". Please ensure a corresponding bank/cash account is created and active in Zoho Books.` },
             { status: 404 }
-          );
-        }
-
-        if (!matchedAccount.is_active) {
-          return NextResponse.json(
-            { success: false, error: `The Zoho Books account "${matchedAccount.account_name}" is currently inactive. Please activate it in Zoho Books before syncing payments.` },
-            { status: 400 }
           );
         }
 
