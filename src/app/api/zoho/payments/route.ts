@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { payable_id, company_id, organization_id, vendor_name, amount, payment_date, reference_no, notes, zoho_contact_id, zoho_bill_id } = body;
+    const { payable_id, company_id, organization_id, vendor_name, amount, payment_date, reference_no, notes, zoho_contact_id, zoho_bill_id, category_id } = body;
 
     if (!amount || amount <= 0) {
       return NextResponse.json(
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     let targetBillId = zoho_bill_id || null;
     let targetVendorName = vendor_name || '';
     let targetOrgId = organization_id || null;
-    let targetCategoryId = null;
+    let targetCategoryId = category_id || null;
 
     // If payable_id is provided and we don't have all Zoho details, look it up
     if (payable_id) {

@@ -1441,6 +1441,7 @@ export async function syncVendorPaymentToZoho(params: {
   vendorName?: string | null;
   zohoContactId?: string | null;
   zohoBillId?: string | null;
+  categoryId?: string | null;
 }): Promise<{ zoho_payment_id?: string; error?: string }> {
   try {
     const res = await fetch('/api/zoho/payments', {
@@ -1455,7 +1456,8 @@ export async function syncVendorPaymentToZoho(params: {
         company_id: params.companyId,
         vendor_name: params.vendorName,
         zoho_contact_id: params.zohoContactId,
-        zoho_bill_id: params.zohoBillId
+        zoho_bill_id: params.zohoBillId,
+        category_id: params.categoryId
       })
     });
     const data = await res.json();
@@ -1511,7 +1513,8 @@ export async function addPaymentRecord(
         companyId: payableObj?.company_id,
         vendorName: payableObj?.vendor_name || payableObj?.title,
         zohoContactId: payableObj?.zoho_contact_id,
-        zohoBillId: payableObj?.zoho_bill_id
+        zohoBillId: payableObj?.zoho_bill_id,
+        categoryId: payableObj?.category_id
       });
       if (zohoRes.zoho_payment_id) {
         zohoPaymentId = zohoRes.zoho_payment_id;
