@@ -107,7 +107,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if it's a petty cash payment (Category ID 'cat-5' or fallback to name check) that should be recorded as a bank transfer
-    if (targetCategoryId === 'cat-5' || (!targetCategoryId && targetVendorName.toLowerCase().includes('petty cash'))) {
+    const isPettyCash = targetCategoryId === 'cat-5' || (!targetCategoryId && targetVendorName.toLowerCase().includes('petty cash'));
+    
+    if (isPettyCash) {
       try {
         const bankAccounts = await fetchZohoBankAccounts(targetOrgId);
         const rawSearch = targetVendorName.toLowerCase().trim();
@@ -134,38 +136,43 @@ export async function POST(req: NextRequest) {
           );
         }
         
-        if (matchedAccount) {
-          if (!matchedAccount.is_active) {
-            return NextResponse.json(
-              { success: false, error: `The Zoho Books account "${matchedAccount.account_name}" is currently inactive. Please activate it in Zoho Books before syncing payments.` },
-              { status: 400 }
-            );
-          }
-
-          const fromAccountId = '3095712000000075328'; // Default Bank Muscat Corporate
-          const transfer = await recordZohoBankTransfer({
-            fromAccountId,
-            toAccountId: matchedAccount.account_id,
-            amount: Number(amount),
-            date: payment_date || new Date().toISOString().substring(0, 10),
-            referenceNumber: reference_no || undefined,
-            description: notes || `Petty cash transfer to ${targetVendorName}`,
-            organizationId: targetOrgId
-          });
-
-          return NextResponse.json({
-            success: true,
-            data: {
-              zoho_payment_id: transfer.transaction_id || transfer.banktransaction_id,
-              payment_number: transfer.reference_number || `BT-${transfer.transaction_id || transfer.banktransaction_id || ''}`,
-              amount: transfer.amount || amount,
-              date: transfer.date || payment_date,
-              bill_id: targetBillId,
-              vendor_id: matchedAccount.account_id,
-              organization_id: targetOrgId
-            }
-          });
+        if (!matchedAccount) {
+          return NextResponse.json(
+            { success: false, error: `No matching Petty Cash bank account found for "${targetVendorName}". Please ensure a corresponding bank/cash account exists in Zoho Books.` },
+            { status: 404 }
+          );
         }
+
+        if (!matchedAccount.is_active) {
+          return NextResponse.json(
+            { success: false, error: `The Zoho Books account "${matchedAccount.account_name}" is currently inactive. Please activate it in Zoho Books before syncing payments.` },
+            { status: 400 }
+          );
+        }
+
+        const fromAccountId = '3095712000000075328'; // Default Bank Muscat Corporate
+        const transfer = await recordZohoBankTransfer({
+          fromAccountId,
+          toAccountId: matchedAccount.account_id,
+          amount: Number(amount),
+          date: payment_date || new Date().toISOString().substring(0, 10),
+          referenceNumber: reference_no || undefined,
+          description: notes || `Petty cash transfer to ${targetVendorName}`,
+          organizationId: targetOrgId
+        });
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            zoho_payment_id: transfer.transaction_id || transfer.banktransaction_id,
+            payment_number: transfer.reference_number || `BT-${transfer.transaction_id || transfer.banktransaction_id || ''}`,
+            amount: transfer.amount || amount,
+            date: transfer.date || payment_date,
+            bill_id: targetBillId,
+            vendor_id: matchedAccount.account_id,
+            organization_id: targetOrgId
+          }
+        });
       } catch (e: any) {
         console.warn('Could not process petty cash transfer:', e);
         return NextResponse.json(
