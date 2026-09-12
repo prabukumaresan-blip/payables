@@ -5,6 +5,7 @@ import {
   deleteZohoVendorPayment, 
   fetchZohoVendors,
   fetchZohoBankAccounts,
+  fetchZohoChartOfAccounts,
   recordZohoBankTransfer
 } from '@/lib/zoho/client';
 import { createClient as createSupabaseServerClient } from '@supabase/supabase-js';
@@ -111,8 +112,11 @@ export async function POST(req: NextRequest) {
     
     if (isPettyCash) {
       try {
-        const allBankAccounts = await fetchZohoBankAccounts(targetOrgId);
-        const bankAccounts = allBankAccounts.filter(a => a.is_active);
+        const allAccounts = await fetchZohoChartOfAccounts(targetOrgId);
+        const bankAccounts = allAccounts.filter(a => 
+          a.is_active && 
+          ['bank', 'cash', 'other_current_asset'].includes(a.account_type)
+        );
         const rawSearch = targetVendorName.toLowerCase().trim();
         
         // 1. Exact Match

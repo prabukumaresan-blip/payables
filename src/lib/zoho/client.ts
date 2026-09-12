@@ -450,6 +450,20 @@ export async function fetchZohoBankAccounts(organizationId?: string | null): Pro
   return res.bankaccounts || [];
 }
 
+export interface ZohoChartOfAccount {
+  account_id: string;
+  account_name: string;
+  account_type: string;
+  is_active: boolean;
+}
+
+export async function fetchZohoChartOfAccounts(organizationId?: string | null): Promise<ZohoChartOfAccount[]> {
+  const res = await zohoRequest<{
+    chartofaccounts: ZohoChartOfAccount[];
+  }>('/chartofaccounts', 'GET', undefined, organizationId);
+  return res.chartofaccounts || [];
+}
+
 export interface RecordZohoBankTransferParams {
   fromAccountId: string;
   toAccountId: string;
