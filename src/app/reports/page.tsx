@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import AppLayout from '@/components/layout/AppLayout';
@@ -326,241 +327,51 @@ function ReportsContent() {
     color: colorMap[item.color] || '#6366F1'
   }));
 
-  // Excel XML export handler
+  // Excel XLSX export handler using SheetJS
   const handleExportExcel = () => {
-    const escapeXML = (str: string | null | undefined) => {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;')
-        .replace(/\n/g, '&#10;')
-        .replace(/\r/g, '&#13;');
-    };
+    // Helper to format number
+    const fNum = (num: number) => Number(num.toFixed(3));
 
-    let xml = `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
-  <Author>Kumaresan</Author>
-  <Created>${new Date().toISOString()}</Created>
- </DocumentProperties>
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Vertical="Bottom"/>
-   <Borders/>
-   <Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
-   <Interior/>
-   <NumberFormat/>
-   <Protection/>
-  </Style>
-  <Style ss:ID="Title">
-   <Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#1E293B"/>
-   <Alignment ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Subtitle">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Italic="1" ss:Color="#475569"/>
-   <Alignment ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Header">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#4F46E5" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="HeaderLeft">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#4F46E5" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="HeaderRight">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#4F46E5" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="DataString">
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="DataNumber">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Currency">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.000"/>
-  </Style>
-  <Style ss:ID="CurrencyZebra">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <NumberFormat ss:Format="#,##0.000"/>
-  </Style>
-  <Style ss:ID="Zebra">
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ZebraCenter">
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Center">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="TotalRow">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#0F172A"/>
-   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#94A3B8"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="TotalRowCurrency">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#0F172A"/>
-   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.000"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#94A3B8"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="TotalRowCenter">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#0F172A"/>
-   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#94A3B8"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="StatusPaid">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#047857"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="StatusPartial">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1D4ED8"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="StatusOverdue">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#B91C1C"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="StatusPending">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#B45309"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="StatusCancelled">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Italic="1" ss:Color="#475569"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ZebraStatusPaid">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#047857"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ZebraStatusPartial">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1D4ED8"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ZebraStatusOverdue">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#B91C1C"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ZebraStatusPending">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#B45309"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ZebraStatusCancelled">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Italic="1" ss:Color="#475569"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
- </Styles>
-`;
+    // Sheet 1: Executive Summary
+    const summaryData: any[][] = [];
+    summaryData.push(['Bright Flowers Trading LLC']);
+    summaryData.push(['Payables Summary Report']);
+    summaryData.push([`Period: ${startMonth} to ${endMonth}`]);
+    summaryData.push([]);
+    summaryData.push([
+      'Category',
+      'Transactions',
+      'Total Amount (OMR)',
+      'Paid Amount (OMR)',
+      'Pending Amount (OMR)',
+      'Completion Rate (%)'
+    ]);
 
-    // Sheet 1: Summary Sheet
-    xml += ` <Worksheet ss:Name="Executive Summary">
-  <Table>
-   <Column ss:Width="180"/>
-   <Column ss:Width="90"/>
-   <Column ss:Width="130"/>
-   <Column ss:Width="130"/>
-   <Column ss:Width="130"/>
-   <Column ss:Width="110"/>
-   <Row ss:Height="24">
-    <Cell ss:StyleID="Title"><Data ss:Type="String">Bright Flowers Trading LLC</Data></Cell>
-   </Row>
-   <Row ss:Height="18">
-    <Cell ss:StyleID="Subtitle"><Data ss:Type="String">Payables Summary Report</Data></Cell>
-   </Row>
-   <Row ss:Height="18">
-    <Cell ss:StyleID="Subtitle"><Data ss:Type="String">Period: ${escapeXML(startMonth)} to ${escapeXML(endMonth)}</Data></Cell>
-   </Row>
-   <Row ss:Height="12"><Cell/></Row>
-   <Row ss:Height="22">
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Category</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Transactions</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Total Amount (OMR)</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Paid Amount (OMR)</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Pending Amount (OMR)</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Completion Rate</Data></Cell>
-   </Row>
-`;
-
-    categorySummaries.forEach((c, idx) => {
-      const rowStyle = idx % 2 === 1 ? 'Zebra' : 'Default';
-      const numStyle = idx % 2 === 1 ? 'CurrencyZebra' : 'Currency';
-      const centerStyle = idx % 2 === 1 ? 'ZebraCenter' : 'Center';
-      
-      xml += `   <Row ss:Height="20">
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(c.name)}</Data></Cell>
-    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="Number">${c.totalCount}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${c.totalAmount}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${c.paidAmount}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${c.pendingAmount}</Data></Cell>
-    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${c.completionRate.toFixed(1)}%</Data></Cell>
-   </Row>
-`;
+    categorySummaries.forEach(c => {
+      summaryData.push([
+        c.name,
+        c.totalCount,
+        fNum(c.totalAmount),
+        fNum(c.paidAmount),
+        fNum(c.pendingAmount),
+        Number(c.completionRate.toFixed(1))
+      ]);
     });
 
-    // Grand Total Row
-    xml += `   <Row ss:Height="22">
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String">GRAND TOTAL</Data></Cell>
-    <Cell ss:StyleID="TotalRowCenter"><Data ss:Type="Number">${grandTotal.totalCount}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${grandTotal.totalAmount}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${grandTotal.paidAmount}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${grandTotal.pendingAmount}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCenter"><Data ss:Type="String">${grandTotal.completionRate.toFixed(1)}%</Data></Cell>
-   </Row>
-  </Table>
- </Worksheet>
-`;
+    summaryData.push([
+      'GRAND TOTAL',
+      grandTotal.totalCount,
+      fNum(grandTotal.totalAmount),
+      fNum(grandTotal.paidAmount),
+      fNum(grandTotal.pendingAmount),
+      Number(grandTotal.completionRate.toFixed(1))
+    ]);
 
-    // Sheet 2: Detailed Ledger Grouped by Category
-    xml += ` <Worksheet ss:Name="Detailed Ledger">
-  <Table>
-   <Column ss:Width="95"/>
-   <Column ss:Width="200"/>
-   <Column ss:Width="140"/>
-   <Column ss:Width="100"/>
-   <Column ss:Width="120"/>
-   <Column ss:Width="120"/>
-   <Column ss:Width="120"/>
-   <Column ss:Width="220"/>
-   <Row ss:Height="24">
-    <Cell ss:StyleID="Title"><Data ss:Type="String">Detailed Transaction Ledger</Data></Cell>
-   </Row>
-   <Row ss:Height="18">
-    <Cell ss:StyleID="Subtitle"><Data ss:Type="String">Period: ${escapeXML(startMonth)} to ${escapeXML(endMonth)}</Data></Cell>
-   </Row>
-   <Row ss:Height="12"><Cell/></Row>
-`;
+    // Sheet 2: Detailed Ledger
+    const ledgerData: any[][] = [];
+    ledgerData.push(['Detailed Transaction Ledger']);
+    ledgerData.push([`Period: ${startMonth} to ${endMonth}`]);
+    ledgerData.push([]);
 
     categories.forEach((cat) => {
       const catPayables = filteredPayables
@@ -580,42 +391,19 @@ function ReportsContent() {
         return sum + (Number(p.amount) - Number(p.paid_amount || 0));
       }, 0);
 
-      // Category Section Header Row
-      xml += `   <Row ss:Height="22">
-    <Cell ss:MergeAcross="7" ss:StyleID="TotalRow"><Data ss:Type="String">${escapeXML(cat.name.toUpperCase())} (${catPayables.length} ${catPayables.length === 1 ? 'record' : 'records'})</Data></Cell>
-   </Row>
-   <Row ss:Height="20">
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Due Date</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Vendor &amp; Details</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Ref No.</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Status</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Total Amount (OMR)</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Paid (OMR)</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Outstanding (OMR)</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Notes</Data></Cell>
-   </Row>
-`;
+      ledgerData.push([`${cat.name.toUpperCase()} (${catPayables.length} records)`]);
+      ledgerData.push([
+        'Due Date',
+        'Vendor & Details',
+        'Ref No.',
+        'Status',
+        'Total Amount (OMR)',
+        'Paid (OMR)',
+        'Outstanding (OMR)',
+        'Notes'
+      ]);
 
-      catPayables.forEach((p, idx) => {
-        const isZebra = idx % 2 === 1;
-        const rowStyle = isZebra ? 'Zebra' : 'Default';
-        const numStyle = isZebra ? 'CurrencyZebra' : 'Currency';
-        const centerStyle = isZebra ? 'ZebraCenter' : 'Center';
-
-        let statusStyle = 'Status';
-        if (p.status === 'paid') statusStyle = 'StatusPaid';
-        else if (p.status === 'partial') statusStyle = 'StatusPartial';
-        else if (p.status === 'overdue') statusStyle = 'StatusOverdue';
-        else if (p.status === 'pending') statusStyle = 'StatusPending';
-        else if (p.status === 'cancelled') statusStyle = 'StatusCancelled';
-
-        if (isZebra) {
-          statusStyle = 'Zebra' + statusStyle;
-        }
-
-        const paid = p.status === 'paid' ? Number(p.amount) : (p.status === 'partial' ? Number(p.paid_amount || 0) : 0);
-        const outstanding = p.status === 'paid' || p.status === 'cancelled' ? 0 : (p.status === 'partial' ? Number(p.amount) - Number(p.paid_amount || 0) : Number(p.amount));
-
+      catPayables.forEach(p => {
         let titleText = p.title;
         if (p.pdc && p.pdc.cheque_no) {
           titleText += ` (Cheque #${p.pdc.cheque_no} • ${p.pdc.bank_name || '—'} - Status: ${p.pdc.status})`;
@@ -628,73 +416,53 @@ function ReportsContent() {
 
         const detailsText = `${p.vendor_name || '—'}\n${titleText}`;
 
-        xml += `   <Row ss:Height="30">
-    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${escapeXML(formattedDate)}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(detailsText)}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(p.reference_no || '—')}</Data></Cell>
-    <Cell ss:StyleID="${statusStyle}"><Data ss:Type="String">${escapeXML(p.status)}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${p.amount}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${paid}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${outstanding}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(p.notes || '')}</Data></Cell>
-   </Row>
-`;
+        const paid = p.status === 'paid' ? Number(p.amount) : (p.status === 'partial' ? Number(p.paid_amount || 0) : 0);
+        const outstanding = p.status === 'paid' || p.status === 'cancelled' ? 0 : (p.status === 'partial' ? Number(p.amount) - Number(p.paid_amount || 0) : Number(p.amount));
+
+        ledgerData.push([
+          formattedDate,
+          detailsText,
+          p.reference_no || '—',
+          p.status,
+          fNum(p.amount),
+          fNum(paid),
+          fNum(outstanding),
+          p.notes || ''
+        ]);
       });
 
-      // Section Subtotal Row
-      xml += `   <Row ss:Height="22">
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String">Subtotal (${cat.name})</Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
-    <Cell ss:StyleID="TotalRowCenter"><Data ss:Type="String">Paid: ${catPayables.filter(p => p.status === 'paid' || p.status === 'partial').length} | Due: ${catPayables.filter(p => p.status === 'pending' || p.status === 'overdue' || p.status === 'partial').length}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${catTotal}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${catPaid}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${catPending}</Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
-   </Row>
-   <Row ss:Height="12"><Cell/></Row>
-`;
+      ledgerData.push([
+        `Subtotal (${cat.name})`,
+        '',
+        '',
+        `Paid: ${catPayables.filter(p => p.status === 'paid' || p.status === 'partial').length} | Due: ${catPayables.filter(p => p.status === 'pending' || p.status === 'overdue' || p.status === 'partial').length}`,
+        fNum(catTotal),
+        fNum(catPaid),
+        fNum(catPending),
+        ''
+      ]);
+      ledgerData.push([]);
     });
 
-    // Sheet 3: Vendor Balances & Zoho Reconciliation Statement
-    xml += ` <Worksheet ss:Name="Vendor Balances">
-  <Table>
-   <Column ss:Width="40"/>
-   <Column ss:Width="250"/>
-   <Column ss:Width="130"/>
-   <Column ss:Width="160"/>
-   <Column ss:Width="120"/>
-   <Column ss:Width="120"/>
-   <Column ss:Width="140"/>
-   <Column ss:Width="140"/>
-   <Column ss:Width="130"/>
-   <Column ss:Width="110"/>
-   <Row ss:Height="24">
-    <Cell ss:StyleID="Title"><Data ss:Type="String">Vendor Balances &amp; Zoho Reconciliation Statement</Data></Cell>
-   </Row>
-   <Row ss:Height="18">
-    <Cell ss:StyleID="Subtitle"><Data ss:Type="String">Generated: ${escapeXML(new Date().toLocaleDateString())}</Data></Cell>
-   </Row>
-   <Row ss:Height="12"><Cell/></Row>
-   <Row ss:Height="22">
-    <Cell ss:StyleID="Header"><Data ss:Type="String">#</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Vendor / Entity Name</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Contact / Tel</Data></Cell>
-    <Cell ss:StyleID="HeaderLeft"><Data ss:Type="String">Bank Account</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">All-Time Invoiced</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Settled / Paid</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Outstanding Balance</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Zoho Advance Credit</Data></Cell>
-    <Cell ss:StyleID="HeaderRight"><Data ss:Type="String">Net Payable</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Status</Data></Cell>
-   </Row>
-`;
+    // Sheet 3: Vendor Balances
+    const vendorData: any[][] = [];
+    vendorData.push(['Vendor Balances & Zoho Reconciliation Statement']);
+    vendorData.push([`Generated: ${new Date().toLocaleDateString()}`]);
+    vendorData.push([]);
+    vendorData.push([
+      '#',
+      'Vendor / Entity Name',
+      'Contact / Tel',
+      'Bank Account',
+      'All-Time Invoiced',
+      'Settled / Paid',
+      'Outstanding Balance',
+      'Zoho Advance Credit',
+      'Net Payable',
+      'Status'
+    ]);
 
     vendorLedgerData.forEach((v, idx) => {
-      const isZebra = idx % 2 === 1;
-      const rowStyle = isZebra ? 'Zebra' : 'Default';
-      const numStyle = isZebra ? 'CurrencyZebra' : 'Currency';
-      const centerStyle = isZebra ? 'ZebraCenter' : 'Center';
       const statusText = v.allTimePending <= 0 
         ? (v.zohoCredit > 0 ? `Credit: ${v.zohoCredit.toFixed(3)}` : 'Fully Settled')
         : (v.allTimePaid > 0 ? 'Partially Paid' : 'Outstanding');
@@ -702,19 +470,18 @@ function ReportsContent() {
       const contactText = [v.vendorObj?.contact_person, v.vendorObj?.phone].filter(Boolean).join(' / ');
       const bankText = v.vendorObj?.bank_name && v.vendorObj?.account_no ? `${v.vendorObj.bank_name} - ${v.vendorObj.account_no}` : (v.vendorObj?.bank_account || '');
 
-      xml += `   <Row ss:Height="20">
-    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="Number">${idx + 1}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(v.name)}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(contactText)}</Data></Cell>
-    <Cell ss:StyleID="${rowStyle}"><Data ss:Type="String">${escapeXML(bankText)}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.allTimeTotal}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.allTimePaid}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.allTimePending}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.zohoCredit}</Data></Cell>
-    <Cell ss:StyleID="${numStyle}"><Data ss:Type="Number">${v.netPayable}</Data></Cell>
-    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${escapeXML(statusText)}</Data></Cell>
-   </Row>
-`;
+      vendorData.push([
+        idx + 1,
+        v.name,
+        contactText,
+        bankText,
+        fNum(v.allTimeTotal),
+        fNum(v.allTimePaid),
+        fNum(v.allTimePending),
+        fNum(v.zohoCredit),
+        fNum(v.netPayable),
+        statusText
+      ]);
     });
 
     const totInv = vendorLedgerData.reduce((s, v) => s + v.allTimeTotal, 0);
@@ -723,28 +490,41 @@ function ReportsContent() {
     const totCredit = vendorLedgerData.reduce((s, v) => s + v.zohoCredit, 0);
     const totNet = vendorLedgerData.reduce((s, v) => s + v.netPayable, 0);
 
-    xml += `   <Row ss:Height="22">
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String">TOTAL (${vendorLedgerData.length} Vendors)</Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totInv}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totPaid}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totPending}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totCredit}</Data></Cell>
-    <Cell ss:StyleID="TotalRowCurrency"><Data ss:Type="Number">${totNet}</Data></Cell>
-    <Cell ss:StyleID="TotalRow"><Data ss:Type="String"></Data></Cell>
-   </Row>
-  </Table>
- </Worksheet>
-</Workbook>
-`;
+    vendorData.push([
+      `TOTAL (${vendorLedgerData.length} Vendors)`,
+      '',
+      '',
+      '',
+      fNum(totInv),
+      fNum(totPaid),
+      fNum(totPending),
+      fNum(totCredit),
+      fNum(totNet),
+      ''
+    ]);
 
-    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    // Create Workbook
+    const wb = XLSX.utils.book_new();
+
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryData);
+    const ws2 = XLSX.utils.aoa_to_sheet(ledgerData);
+    const ws3 = XLSX.utils.aoa_to_sheet(vendorData);
+
+    // Add some basic column widths
+    ws1['!cols'] = [{ wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+    ws2['!cols'] = [{ wch: 15 }, { wch: 40 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 30 }];
+    ws3['!cols'] = [{ wch: 5 }, { wch: 30 }, { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 15 }];
+
+    XLSX.utils.book_append_sheet(wb, ws1, 'Executive Summary');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Detailed Ledger');
+    XLSX.utils.book_append_sheet(wb, ws3, 'Vendor Balances');
+
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Payables_Detailed_Report_${startMonth}_to_${endMonth}.xls`);
+    link.setAttribute('download', `Payables_Detailed_Report_${startMonth}_to_${endMonth}.xlsx`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
