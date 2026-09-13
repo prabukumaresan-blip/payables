@@ -491,18 +491,12 @@ export function generatePaymentExcelFile(
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
 
-  // 6. Write workbook binary array
-  const wopts: XLSX.WritingOptions = { bookType: 'xlsx', bookSST: false, type: 'binary' };
+  // 6. Write workbook array buffer
+  const wopts: XLSX.WritingOptions = { bookType: 'xlsx', bookSST: false, type: 'array' };
   const wbout = XLSX.write(workbook, wopts);
 
-  // 7. Convert binary string to Blob
-  const buf = new ArrayBuffer(wbout.length);
-  const view = new Uint8Array(buf);
-  for (let i = 0; i < wbout.length; i++) {
-    view[i] = wbout.charCodeAt(i) & 0xff;
-  }
-
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  // 7. Create Blob directly from array buffer
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   
   const filename = isOtherBank 
     ? `VP_Other_${uniqueId || 'EXPORT'}.xlsx` 
