@@ -139,7 +139,7 @@ export async function updateCompany(id: string, companyData: Partial<Company>): 
          const { data: existingAccounts } = await supabase.from('company_bank_accounts').select('id').eq('company_id', id);
          if (existingAccounts) {
            const newIds = bankAccounts.map(b => b.id);
-           const toDelete = existingAccounts.filter(e => !newIds.includes(e.id)).map(e => e.id);
+           const toDelete = existingAccounts.filter((e: { id: string }) => !newIds.includes(e.id)).map((e: { id: string }) => e.id);
            if (toDelete.length > 0) {
               await supabase.from('company_bank_accounts').delete().in('id', toDelete);
            }
