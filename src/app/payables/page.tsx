@@ -115,16 +115,18 @@ function PayablesContent() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const cats = await getCategories();
-      const vList = await getVendors();
-      const empList = await getEmployees();
-      const landList = await getLandowners();
-      const list = await getPayables(selectedMonth, {
-        categoryId: categoryIdFilter,
-        status: statusFilter,
-        search: searchQuery,
-        companyId: companyFilter !== 'all' ? companyFilter : undefined
-      });
+      const [cats, vList, empList, landList, list] = await Promise.all([
+        getCategories(),
+        getVendors(),
+        getEmployees(),
+        getLandowners(),
+        getPayables(selectedMonth, {
+          categoryId: categoryIdFilter,
+          status: statusFilter,
+          search: searchQuery,
+          companyId: companyFilter !== 'all' ? companyFilter : undefined
+        })
+      ]);
       setCategories(cats);
       setVendorsList(vList);
       setEmployeesList(empList);

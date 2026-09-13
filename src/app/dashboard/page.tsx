@@ -40,9 +40,11 @@ function DashboardContent() {
       setLoading(true);
       try {
         const companyFilter = selectedCompanyId !== 'ALL' ? selectedCompanyId : undefined;
-        const cats = await getCategories();
-        const curPayables = await getPayables(selectedMonth, { companyId: companyFilter });
-        const all = await getAllPayables({ companyId: companyFilter });
+        const [cats, curPayables, all] = await Promise.all([
+          getCategories(),
+          getPayables(selectedMonth, { companyId: companyFilter }),
+          getAllPayables({ companyId: companyFilter })
+        ]);
         
         setCategories(cats);
         setPayables(curPayables);
