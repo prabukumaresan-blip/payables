@@ -54,23 +54,38 @@ export async function getCompanyById(id: string): Promise<Company | null> {
 export async function createCompany(companyData: Omit<Company, 'id' | 'created_at'>): Promise<Company> {
   const newId = typeof crypto !== 'undefined' ? crypto.randomUUID() : 'comp-' + Math.random().toString(36).substr(2, 9);
   const now = new Date().toISOString();
+  
+  const bankAccounts = (companyData.bank_accounts || []).map((b, idx) => ({
+    ...b,
+    id: b.id || (typeof crypto !== 'undefined' ? crypto.randomUUID() : `acc-${idx + 1}`),
+    company_id: newId
+  }));
+
   const newCompany: Company = {
     ...companyData,
     id: newId,
-    bank_accounts: (companyData.bank_accounts || []).map((b, idx) => ({
-      ...b,
-      id: b.id || (typeof crypto !== 'undefined' ? crypto.randomUUID() : `acc-${idx + 1}`),
-      company_id: newId
-    })),
+    bank_accounts: bankAccounts,
     created_at: now
   };
 
   if (!shouldUseMock()) {
     try {
       const supabase = createBrowserSupabase();
-      await supabase.from('companies').insert(newCompany);
+      
+      const { bank_accounts, ...companyRecord } = newCompany;
+      const { error: insertError } = await supabase.from('companies').insert(companyRecord);
+      
+      if (insertError) throw insertError;
+      
+      if (bankAccounts.length > 0) {
+        const { error: bankError } = await supabase.from('company_bank_accounts').insert(bankAccounts);
+        if (bankError) {
+           console.error('Error inserting bank accounts:', bankError);
+        }
+      }
     } catch (e) {
-      console.warn('Supabase company insert error (fallback to local):', e);
+      console.warn('Supabase company insert error:', e);
+      throw e;
     }
   }
 
@@ -85,24 +100,54 @@ export async function updateCompany(id: string, companyData: Partial<Company>): 
   const index = db.companies.findIndex(c => c.id === id);
   const original = index !== -1 ? db.companies[index] : SEEDED_COMPANIES[0];
 
+  const bankAccounts = companyData.bank_accounts 
+    ? companyData.bank_accounts.map((b, idx) => ({
+        ...b,
+        id: b.id || (typeof crypto !== 'undefined' ? crypto.randomUUID() : `acc-${idx + 1}`),
+        company_id: id
+      }))
+    : original.bank_accounts;
+
   const updated: Company = {
     ...original,
     ...companyData,
-    bank_accounts: companyData.bank_accounts 
-      ? companyData.bank_accounts.map((b, idx) => ({
-          ...b,
-          id: b.id || (typeof crypto !== 'undefined' ? crypto.randomUUID() : `acc-${idx + 1}`),
-          company_id: id
-        }))
-      : original.bank_accounts
+    bank_accounts: bankAccounts
   };
 
   if (!shouldUseMock()) {
     try {
       const supabase = createBrowserSupabase();
-      await supabase.from('companies').update(updated).eq('id', id);
+      const { bank_accounts, ...companyRecord } = updated;
+      
+      const allowedUpdateCols: Record<string, any> = {};
+      const validKeys = ['name', 'short_name', 'subtitle', 'tax_number', 'cr_number', 'logo_url', 'color', 'zoho_organization_id', 'is_active'];
+      for (const key of validKeys) {
+        if ((companyRecord as any)[key] !== undefined) {
+          allowedUpdateCols[key] = (companyRecord as any)[key];
+        }
+      }
+      
+      if (Object.keys(allowedUpdateCols).length > 0) {
+        const { error: updateError } = await supabase.from('companies').update(allowedUpdateCols).eq('id', id);
+        if (updateError) throw updateError;
+      }
+      
+      if (companyData.bank_accounts) {
+         const { error: upsertError } = await supabase.from('company_bank_accounts').upsert(bankAccounts);
+         if (upsertError) console.error('Error upserting bank accounts:', upsertError);
+         
+         const { data: existingAccounts } = await supabase.from('company_bank_accounts').select('id').eq('company_id', id);
+         if (existingAccounts) {
+           const newIds = bankAccounts.map(b => b.id);
+           const toDelete = existingAccounts.filter(e => !newIds.includes(e.id)).map(e => e.id);
+           if (toDelete.length > 0) {
+              await supabase.from('company_bank_accounts').delete().in('id', toDelete);
+           }
+         }
+      }
     } catch (e) {
       console.warn('Supabase company update error:', e);
+      throw e;
     }
   }
 
