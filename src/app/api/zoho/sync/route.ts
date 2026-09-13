@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     const { company_id, organization_id } = body;
     const targetOrgId = organization_id || config.organizationId;
-    const targetCompanyId = company_id || null;
+    const targetCompanyId = company_id || 'comp-1';
 
     // 1. Fetch live Zoho Vendors & Balances for target org
     const zohoVendors = await fetchZohoVendors(targetOrgId);
