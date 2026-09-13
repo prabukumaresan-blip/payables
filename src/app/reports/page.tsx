@@ -335,7 +335,9 @@ function ReportsContent() {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
+        .replace(/'/g, '&apos;')
+        .replace(/\n/g, '&#10;')
+        .replace(/\r/g, '&#13;');
     };
 
     let xml = `<?xml version="1.0"?>
@@ -343,8 +345,7 @@ function ReportsContent() {
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
  xmlns:o="urn:schemas-microsoft-com:office:office"
  xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
   <Author>Kumaresan</Author>
   <Created>${new Date().toISOString()}</Created>
@@ -548,7 +549,6 @@ function ReportsContent() {
    <Column ss:Width="200"/>
    <Column ss:Width="140"/>
    <Column ss:Width="100"/>
-   <Column ss:Width="90"/>
    <Column ss:Width="120"/>
    <Column ss:Width="120"/>
    <Column ss:Width="120"/>
