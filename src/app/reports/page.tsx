@@ -1435,49 +1435,90 @@ function ReportsContent() {
                     Categorized Consolidated Payables (Vendor-wise)
                   </h4>
                   <span className="text-xs text-slate-500 font-semibold">
-                    {categories.filter(cat => filteredPayables.some(p => p.category_id === cat.id)).length} Active Categories
+                    Categorized Summary
                   </span>
                 </div>
 
-                {categories.map((cat) => {
-                  const catPayables = filteredPayables.filter((p) => p.category_id === cat.id);
-                  if (catPayables.length === 0) return null;
-
-                  // Group vendors within this category
-                  const catVendorMap = new Map<string, {
-                    name: string;
-                    totalCount: number;
-                    totalAmount: number;
-                    paidAmount: number;
-                    pendingAmount: number;
-                  }>();
-
-                  catPayables.forEach(p => {
-                    const vName = p.vendor_name?.trim() || 'Other / Unassigned';
-                    const existing = catVendorMap.get(vName) || {
-                      name: vName,
-                      totalCount: 0,
-                      totalAmount: 0,
-                      paidAmount: 0,
-                      pendingAmount: 0
-                    };
-                    existing.totalCount += 1;
-                    existing.totalAmount += Number(p.amount);
-                    if (p.status === 'paid') {
-                      existing.paidAmount += Number(p.amount);
-                    } else if (p.status === 'partial') {
-                      existing.paidAmount += Number(p.paid_amount || 0);
-                      existing.pendingAmount += (Number(p.amount) - Number(p.paid_amount || 0));
-                    } else if (p.status !== 'cancelled') {
-                      existing.pendingAmount += Number(p.amount);
+                {(() => {
+                  const vendorPrimaryCategory = new Map<string, string>();
+                  allPayables.forEach(p => {
+                    const vName = (p.vendor_name || '').trim().toLowerCase();
+                    if (vName && p.category_id && !vendorPrimaryCategory.has(vName)) {
+                      vendorPrimaryCategory.set(vName, p.category_id);
                     }
-                    catVendorMap.set(vName, existing);
                   });
 
-                  const catVendors = Array.from(catVendorMap.values()).sort((a, b) => b.pendingAmount - a.pendingAmount);
-                  const catTotal = catVendors.reduce((sum, v) => sum + v.totalAmount, 0);
-                  const catPaid = catVendors.reduce((sum, v) => sum + v.paidAmount, 0);
-                  const catPending = catVendors.reduce((sum, v) => sum + v.pendingAmount, 0);
+                  const uncatCategory = { id: 'uncategorized', name: 'Other / Uncategorized', color: 'slate' } as Category;
+                  const displayCategories = [...categories, uncatCategory];
+
+                  return displayCategories.map((cat) => {
+                    const catPayables = filteredPayables.filter((p) => (p.category_id || 'uncategorized') === cat.id || (cat.id === 'uncategorized' && !p.category_id));
+                    
+                    const zohoVendorsForCat = vendors.filter(v => {
+                      const out = Number(v.outstanding_payable_amount || 0);
+                      if (out <= 0) return false;
+                      const vName = (v.name || '').trim().toLowerCase();
+                      const vCat = vendorPrimaryCategory.get(vName) || 'uncategorized';
+                      return vCat === cat.id;
+                    });
+
+                    if (catPayables.length === 0 && zohoVendorsForCat.length === 0) return null;
+
+                    // Group vendors within this category
+                    const catVendorMap = new Map<string, {
+                      name: string;
+                      totalCount: number;
+                      totalAmount: number;
+                      paidAmount: number;
+                      pendingAmount: number;
+                    }>();
+
+                    catPayables.forEach(p => {
+                      const vName = p.vendor_name?.trim() || 'Other / Unassigned';
+                      const key = vName.toLowerCase();
+                      const existing = catVendorMap.get(key) || {
+                        name: vName,
+                        totalCount: 0,
+                        totalAmount: 0,
+                        paidAmount: 0,
+                        pendingAmount: 0
+                      };
+                      existing.totalCount += 1;
+                      existing.totalAmount += Number(p.amount);
+                      if (p.status === 'paid') {
+                        existing.paidAmount += Number(p.amount);
+                      } else if (p.status === 'partial') {
+                        existing.paidAmount += Number(p.paid_amount || 0);
+                        existing.pendingAmount += (Number(p.amount) - Number(p.paid_amount || 0));
+                      } else if (p.status !== 'cancelled') {
+                        existing.pendingAmount += Number(p.amount);
+                      }
+                      catVendorMap.set(key, existing);
+                    });
+
+                    zohoVendorsForCat.forEach(v => {
+                      const vName = v.name?.trim() || 'Unknown Vendor';
+                      const key = vName.toLowerCase();
+                      const existing = catVendorMap.get(key) || {
+                        name: vName,
+                        totalCount: 0,
+                        totalAmount: 0,
+                        paidAmount: 0,
+                        pendingAmount: 0
+                      };
+                      const zohoOut = Number(v.outstanding_payable_amount || 0);
+                      if (existing.pendingAmount === 0 && zohoOut > 0) {
+                        existing.pendingAmount = zohoOut;
+                      } else if (existing.pendingAmount > 0 && zohoOut > existing.pendingAmount) {
+                        existing.pendingAmount = zohoOut;
+                      }
+                      catVendorMap.set(key, existing);
+                    });
+
+                    const catVendors = Array.from(catVendorMap.values()).sort((a, b) => b.pendingAmount - a.pendingAmount);
+                    const catTotal = catVendors.reduce((sum, v) => sum + v.totalAmount, 0);
+                    const catPaid = catVendors.reduce((sum, v) => sum + v.paidAmount, 0);
+                    const catPending = catVendors.reduce((sum, v) => sum + v.pendingAmount, 0);
 
                   return (
                     <div key={cat.id} data-pdf-section className="space-y-3 bg-slate-50/50 p-4 rounded-xl border border-slate-200">
@@ -1563,24 +1604,25 @@ function ReportsContent() {
                             })}
                           </tbody>
                           <tfoot>
-                            <tr className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
-                              <td colSpan={2} className="py-2.5 px-3 text-slate-600 uppercase tracking-wider text-[10px]">
-                                {cat.name} Subtotal
+                            <tr className="bg-slate-100/80 text-slate-900 font-bold text-xs border-t border-slate-200">
+                              <td colSpan={2} className="py-2.5 px-3 uppercase tracking-wider text-[10px] text-slate-500">
+                                Category Subtotal
                               </td>
-                              <td className="py-2.5 px-3 text-center font-numeric">{catPayables.length}</td>
+                              <td className="py-2.5 px-3 text-center font-numeric text-slate-600">
+                                {catVendors.reduce((sum, v) => sum + v.totalCount, 0)}
+                              </td>
                               <td className="py-2.5 px-3 text-right font-numeric">{formatOMR(catTotal)}</td>
                               <td className="py-2.5 px-3 text-right font-numeric text-emerald-600">{formatOMR(catPaid)}</td>
                               <td className="py-2.5 px-3 text-right font-numeric text-rose-600 font-mono">{formatOMR(catPending)}</td>
-                              <td className="py-2.5 px-3 text-center text-[10px] text-slate-500 font-numeric">
-                                {catTotal > 0 ? ((catPaid / catTotal) * 100).toFixed(1) : 0}% Settled
-                              </td>
+                              <td className="py-2.5 px-3 text-center text-slate-400 text-[10px]">OMR</td>
                             </tr>
                           </tfoot>
                         </table>
                       </div>
                     </div>
                   );
-                })}
+                });
+              })()}
 
                 {/* Grand Total Bar */}
                 <div className="bg-slate-900 text-white rounded-xl p-4 flex items-center justify-between shadow-md">
