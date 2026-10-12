@@ -1235,6 +1235,7 @@ function ReportsContent() {
                     const catPayables = filteredPayables.filter((p) => (p.category_id || 'uncategorized') === cat.id || (cat.id === 'uncategorized' && !p.category_id));
                     
                     const zohoVendorsForCat = vendors.filter(v => {
+                      if (!v.zoho_contact_id) return false;
                       const out = Number(v.outstanding_payable_amount || 0);
                       if (out <= 0) return false;
                       const vName = (v.name || '').trim().toLowerCase();
@@ -1276,23 +1277,22 @@ function ReportsContent() {
                       catVendorMap.set(key, existing);
                     });
 
+                    // Only add Zoho-synced vendors if they don't already have period payables
                     zohoVendorsForCat.forEach(v => {
                       const vName = v.name?.trim() || 'Unknown Vendor';
                       const key = vName.toLowerCase();
-                      const existing = catVendorMap.get(key) || {
-                        name: vName,
-                        totalCount: 0,
-                        totalAmount: 0,
-                        paidAmount: 0,
-                        pendingAmount: 0
-                      };
-                      const zohoOut = Number(v.outstanding_payable_amount || 0);
-                      if (existing.pendingAmount === 0 && zohoOut > 0) {
-                        existing.pendingAmount = zohoOut;
-                      } else if (existing.pendingAmount > 0 && zohoOut > existing.pendingAmount) {
-                        existing.pendingAmount = zohoOut;
+                      if (!catVendorMap.has(key)) {
+                        const zohoOut = Number(v.outstanding_payable_amount || 0);
+                        if (zohoOut > 0) {
+                          catVendorMap.set(key, {
+                            name: vName,
+                            totalCount: 1,
+                            totalAmount: zohoOut,
+                            paidAmount: 0,
+                            pendingAmount: zohoOut
+                          });
+                        }
                       }
-                      catVendorMap.set(key, existing);
                     });
 
                     const catVendors = Array.from(catVendorMap.values()).sort((a, b) => b.pendingAmount - a.pendingAmount);
