@@ -65,7 +65,7 @@ function ReportsContent() {
     try {
       const start = startMonth < endMonth ? startMonth : endMonth;
       const end = startMonth < endMonth ? endMonth : startMonth;
-      const cFilter = reportCompanyFilter !== 'all' ? reportCompanyFilter : undefined;
+      const cFilter = reportCompanyFilter && reportCompanyFilter.toLowerCase() !== 'all' ? reportCompanyFilter : undefined;
       
       const [cats, vList, allPList, periodList] = await Promise.all([
         getCategories(),

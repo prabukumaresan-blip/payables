@@ -280,7 +280,7 @@ export async function getPayables(
     if (filters.status && filters.status !== 'all') {
       query = query.eq('status', filters.status);
     }
-    if (filters.companyId && filters.companyId !== 'all') {
+    if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
       query = query.eq('company_id', filters.companyId);
     }
     if (filters.search) {
@@ -321,7 +321,7 @@ export async function getPayables(
   if (filters.status && filters.status !== 'all') {
     results = results.filter((p) => p.status === filters.status);
   }
-  if (filters.companyId && filters.companyId !== 'all') {
+  if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
     results = results.filter((p) => (p.company_id || 'comp-1') === filters.companyId);
   }
   if (filters.search) {
@@ -955,7 +955,7 @@ export async function getPdcs(filters: { status?: string; companyId?: string } =
       .from('payables')
       .select('*, category:categories(*), pdc:pdcs(*)');
 
-    if (filters.companyId && filters.companyId !== 'all') {
+    if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
       query = query.eq('company_id', filters.companyId);
     }
 
@@ -981,7 +981,7 @@ export async function getPdcs(filters: { status?: string; companyId?: string } =
   let payablesWithPdc = db.payables.filter((p) => p.category_id === 'cat-4' || p.pdc);
 
   // Parse filters
-  if (filters.companyId && filters.companyId !== 'all') {
+  if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
     payablesWithPdc = payablesWithPdc.filter(p => (p.company_id || 'comp-1') === filters.companyId);
   }
   if (filters.status && filters.status !== 'all') {
@@ -1041,7 +1041,7 @@ export async function getReports(
       .select('*, category:categories(*), pdc:pdcs(*), loan:loan_schedule(*)')
       .or(`and(month_year.gte.${startMonth},month_year.lte.${endMonth}),and(month_year.lt.${startMonth},status.in.(pending,overdue,partial))`);
 
-    if (filters.companyId && filters.companyId !== 'all') {
+    if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
       query = query.eq('company_id', filters.companyId);
     }
 
@@ -1063,7 +1063,7 @@ export async function getReports(
     return inRange || isPreviousUnpaid;
   });
 
-  if (filters.companyId && filters.companyId !== 'all') {
+  if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
     results = results.filter(p => (p.company_id || 'comp-1') === filters.companyId);
   }
 
@@ -1084,7 +1084,7 @@ export async function getAllPayables(filters: { companyId?: string } = {}): Prom
       .from('payables')
       .select('*, category:categories(*), pdc:pdcs(*), loan:loan_schedule(*)');
 
-    if (filters.companyId && filters.companyId !== 'all') {
+    if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
       query = query.eq('company_id', filters.companyId);
     }
 
@@ -1099,7 +1099,7 @@ export async function getAllPayables(filters: { companyId?: string } = {}): Prom
 
   const db = getMockDb();
   let list = db.payables;
-  if (filters.companyId && filters.companyId !== 'all') {
+  if (filters.companyId && filters.companyId.toLowerCase() !== 'all') {
     list = list.filter(p => (p.company_id || 'comp-1') === filters.companyId);
   }
 

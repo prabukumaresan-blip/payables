@@ -124,7 +124,7 @@ function PayablesContent() {
           categoryId: categoryIdFilter,
           status: statusFilter,
           search: searchQuery,
-          companyId: companyFilter !== 'all' ? companyFilter : undefined
+          companyId: companyFilter && companyFilter.toLowerCase() !== 'all' ? companyFilter : undefined
         })
       ]);
       setCategories(cats);
