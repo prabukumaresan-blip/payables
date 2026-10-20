@@ -30,5 +30,13 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "scratch*.ts",
+    "scratch*.js",
+    "scratch.ts",
+    "scratch.js",
+    "fix-null-company.ts",
+    "test-export.js"
+  ]
 }

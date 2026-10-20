@@ -5,10 +5,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Payable, PaymentHistory } from '@/lib/supabase/mockDb';
 import { updatePayableStatus, getPaymentHistory, addPaymentRecord, deletePaymentRecord } from '@/lib/supabase/queries';
-import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2, Zap, AlertCircle } from 'lucide-react';
+import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2, Zap, AlertCircle, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { formatOMR } from '@/lib/utils/formatCurrency';
+import { getWhatsAppShareUrl } from '@/lib/utils/whatsapp';
+import { getVendors, getEmployees, getLandowners } from '@/lib/supabase/queries';
+import { Vendor, Employee, Landowner } from '@/lib/supabase/mockDb';
 
 interface StatusBadgeProps {
   payable: Payable;
@@ -36,8 +39,57 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
   const [addBankAccount, setAddBankAccount] = useState('');
   const [addNotes, setAddNotes] = useState('');
   const [paidAmountInput, setPaidAmountInput] = useState('');
+  const [vendorPhone, setVendorPhone] = useState<string | null>(null);
 
   const popoverRef = useRef<HTMLDivElement>(null);
+
+  const loadVendorContact = async () => {
+    try {
+      const [vList, empList, landList] = await Promise.all([
+        getVendors(),
+        getEmployees(),
+        getLandowners()
+      ]);
+      const vMatch = vList.find(v => v.name === payable.vendor_name);
+      if (vMatch && vMatch.phone) {
+        setVendorPhone(vMatch.phone);
+        return;
+      }
+      const eMatch = empList.find(e => e.name === payable.vendor_name);
+      if (eMatch && eMatch.phone) {
+        setVendorPhone(eMatch.phone);
+        return;
+      }
+      const lMatch = landList.find(l => l.name === payable.vendor_name);
+      if (lMatch && lMatch.phone) {
+        setVendorPhone(lMatch.phone);
+        return;
+      }
+      setVendorPhone(null);
+    } catch (e) {
+      console.warn('Could not load vendor phone:', e);
+    }
+  };
+
+  const handleSendWhatsApp = (paymentItem?: PaymentHistory) => {
+    const amountToSend = paymentItem ? Number(paymentItem.amount) : (Number(payable.paid_amount) || Number(payable.amount));
+    const payDateToSend = paymentItem ? paymentItem.payment_date : (payable.payment_date || format(new Date(), 'yyyy-MM-dd'));
+    const refToSend = paymentItem ? paymentItem.reference_no : payable.reference_no;
+    const bankAccToSend = paymentItem ? paymentItem.bank_account : payable.bank_account;
+
+    const url = getWhatsAppShareUrl({
+      vendorName: payable.vendor_name || payable.title,
+      phoneNumber: vendorPhone,
+      amount: amountToSend,
+      paymentDate: payDateToSend,
+      referenceNo: refToSend,
+      bankAccount: bankAccToSend,
+      companyName: payable.company?.name || null,
+      title: payable.title
+    });
+
+    window.open(url, '_blank');
+  };
 
   const loadPayments = async () => {
     setLoadingPayments(true);
@@ -54,6 +106,7 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
   useEffect(() => {
     if (isOpen) {
       loadPayments();
+      loadVendorContact();
       // Reset form fields
       setAddAmount('');
       setAddDate(format(new Date(), 'yyyy-MM-dd'));
@@ -219,9 +272,22 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
           <div className="relative w-full max-w-2xl bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl transition-all z-50 flex flex-col max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-150">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 truncate max-w-[90%]">
-                Manage Payments & Status: {payable.title}
-              </h3>
+              <div className="flex items-center gap-2 truncate max-w-[80%]">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 truncate">
+                  Manage Payments & Status: {payable.title}
+                </h3>
+                {(payable.status === 'paid' || payable.status === 'partial' || payments.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => handleSendWhatsApp()}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-2xs cursor-pointer shrink-0"
+                    title={`Send payment details to ${payable.vendor_name || 'vendor'} via WhatsApp${vendorPhone ? ` (${vendorPhone})` : ''}`}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 text-emerald-600 fill-emerald-100" />
+                    WhatsApp Details
+                  </button>
+                )}
+              </div>
               <button 
                 onClick={() => setIsOpen(false)}
                 className="text-slate-400 hover:text-slate-600 text-xs font-bold uppercase tracking-wider"
@@ -431,14 +497,24 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
                                 </div>
                               )}
                             </div>
-                            <button
-                              disabled={actionLoading}
-                              onClick={() => handleDeletePayment(p.id)}
-                              className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded transition-all"
-                              title="Delete payment"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSendWhatsApp(p)}
+                                className="text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 p-1.5 rounded transition-all"
+                                title={`Send this payment confirmation to ${payable.vendor_name || 'vendor'} via WhatsApp`}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                disabled={actionLoading}
+                                onClick={() => handleDeletePayment(p.id)}
+                                className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded transition-all"
+                                title="Delete payment"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
