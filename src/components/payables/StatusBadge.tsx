@@ -151,6 +151,25 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
   };
 
   const saveStatus = async (status: Payable['status'], payDate: string | null, paidAmount: number | null) => {
+    // If marking as paid, prepare and trigger WhatsApp immediately in the user click event
+    // Browsers block window.open / popups if invoked after long async network awaits (like Zoho / DB sync)
+    if (status === 'paid') {
+      const amtToSend = paidAmount !== null ? paidAmount : (Number(payable.paid_amount) || Number(payable.amount) || 0);
+      const dateToSend = payDate || payable.payment_date || format(new Date(), 'yyyy-MM-dd');
+
+      // Immediate synchronous launch to guarantee browser permits opening WhatsApp
+      openWhatsApp({
+        vendorName: payable.vendor_name || payable.title,
+        phoneNumber: vendorPhone,
+        amount: amtToSend,
+        paymentDate: dateToSend,
+        referenceNo: payable.reference_no,
+        bankAccount: payable.bank_account,
+        companyName: payable.company?.name || null,
+        title: payable.title
+      });
+    }
+
     setLoading(true);
     setModalError(null);
     try {
@@ -158,15 +177,6 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
       const updated = await updatePayableStatus(payable.id, status, payDate, paidAmount, newAmt);
       onUpdate(updated);
       setIsOpen(false);
-
-      // Automatically launch WhatsApp payment confirmation when marked paid
-      if (status === 'paid') {
-        sendWhatsAppForPaidPayable(updated, {
-          phoneNumber: vendorPhone,
-          paymentDate: payDate || updated.payment_date,
-          amount: updated.paid_amount || updated.amount
-        });
-      }
     } catch (e: any) {
       console.error('Error updating status:', e);
       setModalError(e?.message || 'Failed to update status. Please try again.');
@@ -182,10 +192,23 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
       setModalError('Please enter a valid payment amount greater than 0 OMR');
       return;
     }
+
+    const amtVal = parseFloat(addAmount);
+
+    // Trigger WhatsApp immediately in user click event to prevent browser popup blocking
+    openWhatsApp({
+      vendorName: payable.vendor_name || payable.title,
+      phoneNumber: vendorPhone,
+      amount: amtVal,
+      paymentDate: addDate,
+      referenceNo: addRefNo || null,
+      bankAccount: addBankAccount || null,
+      companyName: payable.company?.name || null,
+      title: payable.title
+    });
     
     setActionLoading(true);
     try {
-      const amtVal = parseFloat(addAmount);
       const updated = await addPaymentRecord({
         payable_id: payable.id,
         amount: amtVal,
@@ -201,15 +224,6 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
       setAddNotes('');
       setSelectedStatus(updated.status);
       setPaymentDate(updated.payment_date || format(new Date(), 'yyyy-MM-dd'));
-
-      // Automatically launch WhatsApp payment advice for the recorded payment
-      sendWhatsAppForPaidPayable(updated, {
-        phoneNumber: vendorPhone,
-        paymentDate: addDate,
-        amount: amtVal,
-        referenceNo: addRefNo || null,
-        bankAccount: addBankAccount || null
-      });
     } catch (e: any) {
       console.error('Error adding payment:', e);
       setModalError(e?.message || 'Failed to record payment. Please try again.');

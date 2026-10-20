@@ -157,24 +157,23 @@ export function openWhatsApp(params: WhatsAppPaymentParams): void {
     const text = buildPaymentWhatsAppMessage(params);
     const encodedText = encodeURIComponent(text);
 
-    // Primary web URL that works reliably across browsers without protocol block
+    // Primary web URL that works across desktop browsers, Mac, and mobile
     const webUrl = phone 
       ? `https://wa.me/${phone}?text=${encodedText}`
       : `https://api.whatsapp.com/send?text=${encodedText}`;
 
-    // Desktop app scheme
-    const desktopUrl = phone
-      ? `whatsapp://send?phone=${phone}&text=${encodedText}`
-      : `whatsapp://send?text=${encodedText}`;
-
     if (typeof window !== 'undefined') {
-      // First try opening WhatsApp Web directly in a new tab (bypasses browser protocol blocking)
-      const newWin = window.open(webUrl, '_blank');
-      
-      // If browser blocked popup or desktop app protocol is desired, fallback to desktop URL
-      if (!newWin || newWin.closed || typeof newWin.closed === 'undefined') {
-        window.location.href = desktopUrl;
-      }
+      const link = document.createElement('a');
+      link.href = webUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        if (document.body.contains(link)) {
+          document.body.removeChild(link);
+        }
+      }, 500);
     }
   } catch (err) {
     console.error('Failed to launch WhatsApp:', err);
