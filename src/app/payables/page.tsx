@@ -869,9 +869,10 @@ function PayablesContent() {
                             {(payable.status === 'paid' || payable.status === 'partial') && (
                               <button
                                 onClick={() => {
-                                  const v = vendorsList.find(vendor => vendor.name === payable.vendor_name);
-                                  const e = employeesList.find(emp => emp.name === payable.vendor_name);
-                                  const l = landownersList.find(land => land.name === payable.vendor_name);
+                                  const targetName = (payable.vendor_name || '').trim().toLowerCase();
+                                  const v = vendorsList.find(vendor => (vendor.name || '').trim().toLowerCase() === targetName);
+                                  const e = employeesList.find(emp => (emp.name || '').trim().toLowerCase() === targetName);
+                                  const l = landownersList.find(land => (land.name || '').trim().toLowerCase() === targetName);
                                   const phone = v?.phone || e?.phone || l?.phone || null;
 
                                   openWhatsApp({

@@ -50,17 +50,18 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
         getEmployees(),
         getLandowners()
       ]);
-      const vMatch = vList.find(v => v.name === payable.vendor_name);
+      const targetName = (payable.vendor_name || '').trim().toLowerCase();
+      const vMatch = vList.find(v => (v.name || '').trim().toLowerCase() === targetName);
       if (vMatch && vMatch.phone) {
         setVendorPhone(vMatch.phone);
         return;
       }
-      const eMatch = empList.find(e => e.name === payable.vendor_name);
+      const eMatch = empList.find(e => (e.name || '').trim().toLowerCase() === targetName);
       if (eMatch && eMatch.phone) {
         setVendorPhone(eMatch.phone);
         return;
       }
-      const lMatch = landList.find(l => l.name === payable.vendor_name);
+      const lMatch = landList.find(l => (l.name || '').trim().toLowerCase() === targetName);
       if (lMatch && lMatch.phone) {
         setVendorPhone(lMatch.phone);
         return;

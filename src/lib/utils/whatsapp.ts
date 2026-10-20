@@ -14,12 +14,13 @@ export interface WhatsAppPaymentParams {
 
 /**
  * Clean phone number into international format without symbols
- * Supports Oman (+968) default if 8 digits without country code
+ * Supports Oman (+968) default if 8 digits without country code.
+ * Ensures number is formatted strictly as digits (e.g. 96891234567) so WhatsApp Mac App opens the exact chat.
  */
 export function formatWhatsAppPhoneNumber(phone?: string | null): string {
   if (!phone) return '';
-  // Remove non-numeric characters
-  let cleaned = phone.replace(/[^\d+]/g, '');
+  // Remove spaces, dashes, brackets, and any non-digit/non-plus chars
+  let cleaned = phone.trim().replace(/[^\d+]/g, '');
 
   if (cleaned.startsWith('+')) {
     cleaned = cleaned.substring(1);
@@ -27,8 +28,11 @@ export function formatWhatsAppPhoneNumber(phone?: string | null): string {
     cleaned = cleaned.substring(2);
   }
 
-  // If standard Oman 8-digit mobile number starting with 7, 9, etc., add 968
-  if (cleaned.length === 8 && (cleaned.startsWith('9') || cleaned.startsWith('7'))) {
+  // Remove leading zeros after country code if any
+  cleaned = cleaned.replace(/^0+/, '');
+
+  // If standard Oman 8-digit mobile/landline number starting with 7, 9, or 2, prefix 968
+  if (cleaned.length === 8 && (cleaned.startsWith('9') || cleaned.startsWith('7') || cleaned.startsWith('2'))) {
     cleaned = '968' + cleaned;
   }
 
@@ -107,32 +111,34 @@ export function getWhatsAppShareUrl(params: WhatsAppPaymentParams, preferDesktop
 /**
  * Triggers WhatsApp directly in Mac Desktop app, falling back cleanly to WhatsApp Web / https://wa.me
  */
+/**
+ * Triggers WhatsApp directly for Mac Desktop app and Web
+ * Opening https://wa.me/<phone>?text=... in the browser natively instructs macOS:
+ * "Open WhatsApp.app?" which opens the EXACT conversation for that phone number in the Mac desktop client.
+ */
 export function openWhatsApp(params: WhatsAppPaymentParams): void {
   try {
-    const desktopUrl = getWhatsAppShareUrl(params, true);
-    
-    // Direct protocol navigation for WhatsApp Desktop App on macOS
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-    
-    // Attempt to invoke the Mac Desktop App via whatsapp:// protocol
-    window.location.href = desktopUrl;
-    
-    setTimeout(() => {
-      if (document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
-      }
-    }, 2000);
-  } catch (err) {
-    console.warn('Direct desktop app launch fallback to web link:', err);
-    const webUrl = getWhatsAppShareUrl(params, false);
+    const phone = formatWhatsAppPhoneNumber(params.phoneNumber);
+    const text = buildPaymentWhatsAppMessage(params);
+    const encodedText = encodeURIComponent(text);
+
+    // If phone number exists, wa.me is the most reliable way on macOS
+    // to navigate directly to that contact's chat and prefill the message
+    let url: string;
+    if (phone) {
+      url = `https://wa.me/${phone}?text=${encodedText}`;
+    } else {
+      url = `whatsapp://send?text=${encodedText}`;
+    }
+
     const link = document.createElement('a');
-    link.href = webUrl;
+    link.href = url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  } catch (err) {
+    console.error('Failed to launch WhatsApp:', err);
   }
 }
