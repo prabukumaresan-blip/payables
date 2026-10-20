@@ -162,32 +162,31 @@ export function openWhatsApp(params: WhatsAppPaymentParams): void {
       ? `whatsapp://send?phone=${phone}&text=${encodedText}`
       : `whatsapp://send?text=${encodedText}`;
 
-    // Web fallback URL
+    // Standard fallback URL
     const webFallbackUrl = phone 
       ? `https://wa.me/${phone}?text=${encodedText}`
-      : `https://web.whatsapp.com/send?text=${encodedText}`;
+      : `https://api.whatsapp.com/send?text=${encodedText}`;
 
     if (typeof window !== 'undefined') {
-      // 1. First trigger the native macOS Desktop application via whatsapp:// protocol
-      // Using hidden iframe or window.location ensures macOS launches /Applications/WhatsApp.app immediately
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = nativeAppUrl;
-      document.body.appendChild(iframe);
+      // Create clickable anchor for native macOS desktop scheme
+      const link = document.createElement('a');
+      link.href = nativeAppUrl;
+      link.target = '_self';
+      document.body.appendChild(link);
+      link.click();
 
-      // 2. Also open window location to native desktop app
+      // In case the browser intercepts custom protocol on link.click, also invoke window.open
       try {
-        window.location.href = nativeAppUrl;
-      } catch (locErr) {
-        console.warn('Direct location.href desktop call failed, falling back to web:', locErr);
+        window.open(nativeAppUrl, '_self');
+      } catch (e) {
+        window.location.assign(nativeAppUrl);
       }
 
-      // Cleanup iframe
       setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
+        if (document.body.contains(link)) {
+          document.body.removeChild(link);
         }
-      }, 1000);
+      }, 500);
     }
   } catch (err) {
     console.error('Failed to launch WhatsApp Desktop:', err);
