@@ -157,26 +157,40 @@ export function openWhatsApp(params: WhatsAppPaymentParams): void {
     const text = buildPaymentWhatsAppMessage(params);
     const encodedText = encodeURIComponent(text);
 
-    // Primary web URL that works across desktop browsers, Mac, and mobile
-    const webUrl = phone 
+    // Native macOS WhatsApp Desktop App URL protocol
+    const nativeAppUrl = phone 
+      ? `whatsapp://send?phone=${phone}&text=${encodedText}`
+      : `whatsapp://send?text=${encodedText}`;
+
+    // Web fallback URL
+    const webFallbackUrl = phone 
       ? `https://wa.me/${phone}?text=${encodedText}`
-      : `https://api.whatsapp.com/send?text=${encodedText}`;
+      : `https://web.whatsapp.com/send?text=${encodedText}`;
 
     if (typeof window !== 'undefined') {
-      const link = document.createElement('a');
-      link.href = webUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
+      // 1. First trigger the native macOS Desktop application via whatsapp:// protocol
+      // Using hidden iframe or window.location ensures macOS launches /Applications/WhatsApp.app immediately
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = nativeAppUrl;
+      document.body.appendChild(iframe);
+
+      // 2. Also open window location to native desktop app
+      try {
+        window.location.href = nativeAppUrl;
+      } catch (locErr) {
+        console.warn('Direct location.href desktop call failed, falling back to web:', locErr);
+      }
+
+      // Cleanup iframe
       setTimeout(() => {
-        if (document.body.contains(link)) {
-          document.body.removeChild(link);
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
         }
-      }, 500);
+      }, 1000);
     }
   } catch (err) {
-    console.error('Failed to launch WhatsApp:', err);
+    console.error('Failed to launch WhatsApp Desktop:', err);
   }
 }
 
