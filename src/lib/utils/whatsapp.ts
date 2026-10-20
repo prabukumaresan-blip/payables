@@ -112,9 +112,10 @@ export function getWhatsAppShareUrl(params: WhatsAppPaymentParams, preferDesktop
  * Triggers WhatsApp directly in Mac Desktop app, falling back cleanly to WhatsApp Web / https://wa.me
  */
 /**
- * Triggers WhatsApp directly for Mac Desktop app and Web
- * Opening https://wa.me/<phone>?text=... in the browser natively instructs macOS:
- * "Open WhatsApp.app?" which opens the EXACT conversation for that phone number in the Mac desktop client.
+/**
+ * Triggers WhatsApp directly on macOS Desktop App (net.whatsapp.WhatsApp)
+ * Using the native 'whatsapp://send?phone=...&text=...' protocol directly invokes
+ * the Mac Desktop application and focuses the specific contact.
  */
 export function openWhatsApp(params: WhatsAppPaymentParams): void {
   try {
@@ -122,23 +123,15 @@ export function openWhatsApp(params: WhatsAppPaymentParams): void {
     const text = buildPaymentWhatsAppMessage(params);
     const encodedText = encodeURIComponent(text);
 
-    // If phone number exists, wa.me is the most reliable way on macOS
-    // to navigate directly to that contact's chat and prefill the message
-    let url: string;
-    if (phone) {
-      url = `https://wa.me/${phone}?text=${encodedText}`;
-    } else {
-      url = `whatsapp://send?text=${encodedText}`;
-    }
+    // Direct desktop app scheme: whatsapp://send?phone=<phone>&text=<encodedText>
+    const nativeDesktopUrl = phone
+      ? `whatsapp://send?phone=${phone}&text=${encodedText}`
+      : `whatsapp://send?text=${encodedText}`;
 
-    const link = document.createElement('a');
-    link.href = url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Direct invocation: This tells macOS to open the native WhatsApp Desktop App immediately
+    window.location.href = nativeDesktopUrl;
+
   } catch (err) {
-    console.error('Failed to launch WhatsApp:', err);
+    console.error('Failed to launch WhatsApp Desktop:', err);
   }
 }
