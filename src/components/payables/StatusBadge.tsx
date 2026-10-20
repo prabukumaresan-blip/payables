@@ -9,7 +9,7 @@ import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2, Zap, AlertCircle, 
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { formatOMR } from '@/lib/utils/formatCurrency';
-import { getWhatsAppShareUrl } from '@/lib/utils/whatsapp';
+import { getWhatsAppShareUrl, openWhatsApp } from '@/lib/utils/whatsapp';
 import { getVendors, getEmployees, getLandowners } from '@/lib/supabase/queries';
 import { Vendor, Employee, Landowner } from '@/lib/supabase/mockDb';
 
@@ -77,7 +77,7 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
     const refToSend = paymentItem ? paymentItem.reference_no : payable.reference_no;
     const bankAccToSend = paymentItem ? paymentItem.bank_account : payable.bank_account;
 
-    const url = getWhatsAppShareUrl({
+    openWhatsApp({
       vendorName: payable.vendor_name || payable.title,
       phoneNumber: vendorPhone,
       amount: amountToSend,
@@ -87,8 +87,6 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
       companyName: payable.company?.name || null,
       title: payable.title
     });
-
-    window.open(url, '_blank');
   };
 
   const loadPayments = async () => {

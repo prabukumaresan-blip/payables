@@ -39,9 +39,23 @@ export function formatWhatsAppPhoneNumber(phone?: string | null): string {
  * Builds professional payment confirmation WhatsApp message
  */
 export function buildPaymentWhatsAppMessage(params: WhatsAppPaymentParams): string {
-  const formattedDate = params.paymentDate
-    ? format(parseISO(params.paymentDate), 'dd MMM yyyy')
-    : format(new Date(), 'dd MMM yyyy');
+  let formattedDate = '';
+  try {
+    if (params.paymentDate) {
+      const parsed = typeof params.paymentDate === 'string' && params.paymentDate.includes('T')
+        ? parseISO(params.paymentDate)
+        : new Date(params.paymentDate);
+      if (!isNaN(parsed.getTime())) {
+        formattedDate = format(parsed, 'dd MMM yyyy');
+      } else {
+        formattedDate = params.paymentDate;
+      }
+    } else {
+      formattedDate = format(new Date(), 'dd MMM yyyy');
+    }
+  } catch (err) {
+    formattedDate = params.paymentDate || format(new Date(), 'dd MMM yyyy');
+  }
 
   const sender = params.companyName ? params.companyName.trim() : 'Accounts Department';
 
@@ -81,4 +95,23 @@ export function getWhatsAppShareUrl(params: WhatsAppPaymentParams): string {
   }
   // If no phone is provided, open WhatsApp with prefilled text so user can select contact
   return `https://api.whatsapp.com/send?text=${encodedText}`;
+}
+
+/**
+ * Triggers WhatsApp window open safely in modern browsers
+ */
+export function openWhatsApp(params: WhatsAppPaymentParams): void {
+  try {
+    const url = getWhatsAppShareUrl(params);
+    // Create an anchor element to avoid popup blocker issues
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (err) {
+    console.error('Failed to open WhatsApp link:', err);
+  }
 }

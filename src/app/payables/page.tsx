@@ -36,7 +36,7 @@ import {
   Loader2,
   MessageSquare
 } from 'lucide-react';
-import { getWhatsAppShareUrl } from '@/lib/utils/whatsapp';
+import { getWhatsAppShareUrl, openWhatsApp } from '@/lib/utils/whatsapp';
 import { 
   parsePaymentFile, 
   matchPaymentRows, 
@@ -874,7 +874,7 @@ function PayablesContent() {
                                   const l = landownersList.find(land => land.name === payable.vendor_name);
                                   const phone = v?.phone || e?.phone || l?.phone || null;
 
-                                  const url = getWhatsAppShareUrl({
+                                  openWhatsApp({
                                     vendorName: payable.vendor_name || payable.title,
                                     phoneNumber: phone,
                                     amount: Number(payable.paid_amount) || Number(payable.amount),
@@ -884,7 +884,6 @@ function PayablesContent() {
                                     companyName: payable.company?.name || null,
                                     title: payable.title
                                   });
-                                  window.open(url, '_blank');
                                 }}
                                 className="rounded p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
                                 title={`Send WhatsApp payment advice to ${payable.vendor_name || 'vendor'}`}
