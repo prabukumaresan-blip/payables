@@ -36,7 +36,7 @@ import {
   Loader2,
   MessageSquare
 } from 'lucide-react';
-import { getWhatsAppShareUrl, openWhatsApp } from '@/lib/utils/whatsapp';
+import { getWhatsAppShareUrl, openWhatsApp, sendWhatsAppForPaidPayable } from '@/lib/utils/whatsapp';
 import { 
   parsePaymentFile, 
   matchPaymentRows, 
@@ -304,8 +304,22 @@ function PayablesContent() {
     const today = format(new Date(), 'yyyy-MM-dd');
     setLoading(true);
     try {
-      for (const id of selectedIds) {
-        await updatePayableStatus(id, 'paid', today);
+      const selectedPayables = payables.filter(p => selectedIds.includes(p.id));
+      for (const payableItem of selectedPayables) {
+        const updated = await updatePayableStatus(payableItem.id, 'paid', today);
+        
+        // Find matching contact phone
+        const targetName = (payableItem.vendor_name || '').trim().toLowerCase();
+        const v = vendorsList.find(vendor => (vendor.name || '').trim().toLowerCase() === targetName);
+        const e = employeesList.find(emp => (emp.name || '').trim().toLowerCase() === targetName);
+        const l = landownersList.find(land => (land.name || '').trim().toLowerCase() === targetName);
+        const phone = v?.phone || e?.phone || l?.phone || null;
+
+        sendWhatsAppForPaidPayable(updated, {
+          phoneNumber: phone,
+          paymentDate: today,
+          amount: updated.paid_amount || updated.amount
+        });
       }
       await loadData();
     } catch (e) {

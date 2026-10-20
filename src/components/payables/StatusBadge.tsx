@@ -9,7 +9,7 @@ import { Check, ChevronDown, Calendar, Trash2, Plus, Loader2, Zap, AlertCircle, 
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { formatOMR } from '@/lib/utils/formatCurrency';
-import { getWhatsAppShareUrl, openWhatsApp } from '@/lib/utils/whatsapp';
+import { getWhatsAppShareUrl, openWhatsApp, sendWhatsAppForPaidPayable } from '@/lib/utils/whatsapp';
 import { getVendors, getEmployees, getLandowners } from '@/lib/supabase/queries';
 import { Vendor, Employee, Landowner } from '@/lib/supabase/mockDb';
 
@@ -158,6 +158,15 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
       const updated = await updatePayableStatus(payable.id, status, payDate, paidAmount, newAmt);
       onUpdate(updated);
       setIsOpen(false);
+
+      // Automatically launch WhatsApp payment confirmation when marked paid
+      if (status === 'paid') {
+        sendWhatsAppForPaidPayable(updated, {
+          phoneNumber: vendorPhone,
+          paymentDate: payDate || updated.payment_date,
+          amount: updated.paid_amount || updated.amount
+        });
+      }
     } catch (e: any) {
       console.error('Error updating status:', e);
       setModalError(e?.message || 'Failed to update status. Please try again.');
@@ -192,6 +201,15 @@ export default function StatusBadge({ payable, onUpdate }: StatusBadgeProps) {
       setAddNotes('');
       setSelectedStatus(updated.status);
       setPaymentDate(updated.payment_date || format(new Date(), 'yyyy-MM-dd'));
+
+      // Automatically launch WhatsApp payment advice for the recorded payment
+      sendWhatsAppForPaidPayable(updated, {
+        phoneNumber: vendorPhone,
+        paymentDate: addDate,
+        amount: amtVal,
+        referenceNo: addRefNo || null,
+        bankAccount: addBankAccount || null
+      });
     } catch (e: any) {
       console.error('Error adding payment:', e);
       setModalError(e?.message || 'Failed to record payment. Please try again.');
