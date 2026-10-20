@@ -83,35 +83,56 @@ export function buildPaymentWhatsAppMessage(params: WhatsAppPaymentParams): stri
 }
 
 /**
- * Generates https://wa.me/ URL for direct WhatsApp web/app launch
+ * Generates WhatsApp URL
+ * If preferDesktopApp is true, returns whatsapp:// protocol URL to open the Mac Desktop App directly.
  */
-export function getWhatsAppShareUrl(params: WhatsAppPaymentParams): string {
+export function getWhatsAppShareUrl(params: WhatsAppPaymentParams, preferDesktopApp = false): string {
   const phone = formatWhatsAppPhoneNumber(params.phoneNumber);
   const text = buildPaymentWhatsAppMessage(params);
   const encodedText = encodeURIComponent(text);
 
+  if (preferDesktopApp) {
+    if (phone) {
+      return `whatsapp://send?phone=${phone}&text=${encodedText}`;
+    }
+    return `whatsapp://send?text=${encodedText}`;
+  }
+
   if (phone) {
     return `https://wa.me/${phone}?text=${encodedText}`;
   }
-  // If no phone is provided, open WhatsApp with prefilled text so user can select contact
   return `https://api.whatsapp.com/send?text=${encodedText}`;
 }
 
 /**
- * Triggers WhatsApp window open safely in modern browsers
+ * Triggers WhatsApp directly in Mac Desktop app, falling back cleanly to WhatsApp Web / https://wa.me
  */
 export function openWhatsApp(params: WhatsAppPaymentParams): void {
   try {
-    const url = getWhatsAppShareUrl(params);
-    // Create an anchor element to avoid popup blocker issues
+    const desktopUrl = getWhatsAppShareUrl(params, true);
+    
+    // Direct protocol navigation for WhatsApp Desktop App on macOS
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    
+    // Attempt to invoke the Mac Desktop App via whatsapp:// protocol
+    window.location.href = desktopUrl;
+    
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
+    }, 2000);
+  } catch (err) {
+    console.warn('Direct desktop app launch fallback to web link:', err);
+    const webUrl = getWhatsAppShareUrl(params, false);
     const link = document.createElement('a');
-    link.href = url;
+    link.href = webUrl;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  } catch (err) {
-    console.error('Failed to open WhatsApp link:', err);
   }
 }
