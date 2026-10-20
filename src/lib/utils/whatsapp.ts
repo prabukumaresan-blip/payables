@@ -124,17 +124,21 @@ export async function resolvePayablePhone(payable: Partial<Payable>): Promise<st
       getLandowners().catch(() => [])
     ]);
 
-    const vMatch = vList.find(v => (v.name || '').trim().toLowerCase() === targetName);
-    if (vMatch && vMatch.phone) return vMatch.phone;
+    const norm = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanTarget = norm(targetName);
 
-    const eMatch = empList.find(e => (e.name || '').trim().toLowerCase() === targetName);
+    // Exact or normalized match
+    let match = vList.find(v => norm(v.name) === cleanTarget || (cleanTarget.length > 3 && norm(v.name).includes(cleanTarget)) || (norm(v.name).length > 3 && cleanTarget.includes(norm(v.name))));
+    if (match && match.phone) return match.phone;
+
+    const eMatch = empList.find(e => norm(e.name) === cleanTarget || (cleanTarget.length > 3 && norm(e.name).includes(cleanTarget)) || (norm(e.name).length > 3 && cleanTarget.includes(norm(e.name))));
     if (eMatch && eMatch.phone) return eMatch.phone;
 
-    const lMatch = landList.find(l => (l.name || '').trim().toLowerCase() === targetName);
+    const lMatch = landList.find(l => norm(l.name) === cleanTarget || (cleanTarget.length > 3 && norm(l.name).includes(cleanTarget)) || (norm(l.name).length > 3 && cleanTarget.includes(norm(l.name))));
     if (lMatch && lMatch.phone) return lMatch.phone;
 
-    // Check by contact person if available
-    const contactMatch = vList.find(v => (v.contact_person || '').trim().toLowerCase() === targetName);
+    // Check contact person
+    const contactMatch = vList.find(v => norm(v.contact_person) === cleanTarget || (norm(v.contact_person).length > 3 && cleanTarget.includes(norm(v.contact_person))));
     if (contactMatch && contactMatch.phone) return contactMatch.phone;
 
   } catch (e) {
@@ -153,26 +157,27 @@ export function openWhatsApp(params: WhatsAppPaymentParams): void {
     const text = buildPaymentWhatsAppMessage(params);
     const encodedText = encodeURIComponent(text);
 
-    // If phone exists, open wa.me / native desktop URL
+    // Primary web URL that works reliably across browsers without protocol block
+    const webUrl = phone 
+      ? `https://wa.me/${phone}?text=${encodedText}`
+      : `https://api.whatsapp.com/send?text=${encodedText}`;
+
+    // Desktop app scheme
     const desktopUrl = phone
       ? `whatsapp://send?phone=${phone}&text=${encodedText}`
       : `whatsapp://send?text=${encodedText}`;
 
-    // Try opening via hidden anchor / iframe or window to seamlessly launch WhatsApp
     if (typeof window !== 'undefined') {
-      const a = document.createElement('a');
-      a.href = desktopUrl;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        if (document.body.contains(a)) {
-          document.body.removeChild(a);
-        }
-      }, 500);
+      // First try opening WhatsApp Web directly in a new tab (bypasses browser protocol blocking)
+      const newWin = window.open(webUrl, '_blank');
+      
+      // If browser blocked popup or desktop app protocol is desired, fallback to desktop URL
+      if (!newWin || newWin.closed || typeof newWin.closed === 'undefined') {
+        window.location.href = desktopUrl;
+      }
     }
   } catch (err) {
-    console.error('Failed to launch WhatsApp Desktop:', err);
+    console.error('Failed to launch WhatsApp:', err);
   }
 }
 
