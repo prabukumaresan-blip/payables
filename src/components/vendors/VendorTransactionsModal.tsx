@@ -40,7 +40,8 @@ import {
   Send,
   Layers,
   Check,
-  Download
+  Download,
+  FileCheck2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import PaymentConfirmationModal from './PaymentConfirmationModal';
@@ -99,6 +100,7 @@ export default function VendorTransactionsModal({
     return p.vendor_name.trim().toLowerCase() === vendor.name.trim().toLowerCase();
   });
 
+  const vendorBillMap = new Map(vendorBills.map(b => [b.id, b]));
   const vendorBillIds = new Set(vendorBills.map(p => p.id));
 
   // Load payment records matching this vendor's bills
@@ -455,8 +457,38 @@ export default function VendorTransactionsModal({
           {/* Quick Transaction Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={() => {
+                if (vendorPayments.length > 0) {
+                  setConfirmationModalData({
+                    payment: vendorPayments[0],
+                    payable: vendorBillMap.get(vendorPayments[0].payable_id) || null
+                  });
+                } else {
+                  // Fallback: allow on-the-fly advice
+                  setConfirmationModalData({
+                    payment: {
+                      id: `adv-${Date.now()}`,
+                      payable_id: vendorBills[0]?.id || `pay-${Date.now()}`,
+                      amount: Number(vendor.outstanding_payable_amount) || 0,
+                      payment_date: format(new Date(), 'yyyy-MM-dd'),
+                      reference_no: `ADV-${Date.now().toString().slice(-6)}`,
+                      bank_account: vendor.bank_account || vendor.account_no || null,
+                      notes: `Payment Confirmation Advice for ${vendor.name}`,
+                      company_id: vendor.company_id || null
+                    },
+                    payable: vendorBills[0] || null
+                  });
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold uppercase tracking-wider shadow-xs hover:shadow transition-all cursor-pointer"
+              title="Download official payment confirmation advice voucher"
+            >
+              <FileCheck2 className="h-4 w-4 text-indigo-600" />
+              Payment Advice
+            </button>
+            <button
               onClick={() => handleOpenRecordPayment()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider shadow-sm hover:shadow transition-all"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider shadow-sm hover:shadow transition-all cursor-pointer"
             >
               <ArrowUpRight className="h-4 w-4" />
               Make Payment
@@ -466,7 +498,7 @@ export default function VendorTransactionsModal({
                 setEditingPayable(null);
                 setIsAddBillOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider shadow-sm hover:shadow transition-all"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider shadow-sm hover:shadow transition-all cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               Create Bill

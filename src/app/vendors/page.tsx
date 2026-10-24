@@ -60,6 +60,8 @@ function VendorsContent() {
   // Payment Confirmation Modal State
   const [selectedVendorForConfirmation, setSelectedVendorForConfirmation] = useState<Vendor | null>(null);
   const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
+  const [isVendorPickerForConfirmationOpen, setIsVendorPickerForConfirmationOpen] = useState(false);
+  const [vendorPickerSearch, setVendorPickerSearch] = useState('');
 
   // Zoho Sync State
   const [zohoSyncing, setZohoSyncing] = useState(false);
@@ -734,6 +736,14 @@ function VendorsContent() {
               </button>
             )}
             <button
+              onClick={() => setIsVendorPickerForConfirmationOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100/80 transition-colors cursor-pointer"
+              title="Download payment confirmation advice for any vendor"
+            >
+              <FileCheck2 className="h-4 w-4 text-emerald-600" />
+              <span>Download Payment Advice</span>
+            </button>
+            <button
               onClick={() => setIsImportModalOpen(true)}
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
               title="Import from Excel"
@@ -872,10 +882,11 @@ function VendorsContent() {
                               setSelectedVendorForConfirmation(vendor);
                               setIsConfirmationModalOpen(true);
                             }}
-                            className="rounded p-1.5 text-emerald-600 hover:bg-emerald-50 transition-colors"
-                            title="Download Payment Confirmation Advice"
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors shadow-2xs cursor-pointer"
+                            title="Download Payment Confirmation Advice for this vendor"
                           >
-                            <FileCheck2 className="h-4.5 w-4.5" />
+                            <FileCheck2 className="h-3.5 w-3.5 text-emerald-600" />
+                            <span className="hidden xl:inline">Advice</span>
                           </button>
                           <button
                             onClick={() => {
@@ -1665,6 +1676,118 @@ function VendorsContent() {
             vendor={selectedVendorForConfirmation}
             allPayables={payables}
           />
+        )}
+
+        {/* Global Vendor Picker Dialog for Payment Advice */}
+        {isVendorPickerForConfirmationOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div 
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
+              onClick={() => {
+                setIsVendorPickerForConfirmationOpen(false);
+                setVendorPickerSearch('');
+              }} 
+            />
+
+            <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[85vh] overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-white/10 text-white ring-1 ring-white/20">
+                    <FileCheck2 className="h-5 w-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white">Select Vendor for Payment Advice</h2>
+                    <p className="text-xs text-slate-300">Choose a vendor to view and download payment confirmations</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsVendorPickerForConfirmationOpen(false);
+                    setVendorPickerSearch('');
+                  }}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-3 bg-slate-50 border-b border-slate-200 shrink-0">
+                <div className="relative">
+                  <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search vendor by name, account number or phone..."
+                    value={vendorPickerSearch}
+                    onChange={(e) => setVendorPickerSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-[50vh]">
+                {vendors
+                  .filter(v => {
+                    if (!vendorPickerSearch.trim()) return true;
+                    const q = vendorPickerSearch.toLowerCase().trim();
+                    return (
+                      v.name.toLowerCase().includes(q) ||
+                      (v.account_no && v.account_no.toLowerCase().includes(q)) ||
+                      (v.phone && v.phone.toLowerCase().includes(q))
+                    );
+                  })
+                  .map(v => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => {
+                        setIsVendorPickerForConfirmationOpen(false);
+                        setVendorPickerSearch('');
+                        setSelectedVendorForConfirmation(v);
+                        setIsConfirmationModalOpen(true);
+                      }}
+                      className="w-full text-left p-3.5 hover:bg-indigo-50/60 transition-colors flex items-center justify-between gap-3 group cursor-pointer"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-semibold text-xs text-slate-900 group-hover:text-indigo-600 block truncate">
+                          {v.name}
+                        </span>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                          {v.bank_name && <span>{v.bank_name}</span>}
+                          {v.account_no && <span className="font-mono">({v.account_no})</span>}
+                          {v.contact_person && <span>• {v.contact_person}</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {v.outstanding_payable_amount && Number(v.outstanding_payable_amount) > 0 && (
+                          <span className="text-[11px] font-mono font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200/50">
+                            OMR {Number(v.outstanding_payable_amount).toFixed(3)}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-semibold group-hover:bg-emerald-500 transition shadow-2xs">
+                          <FileCheck2 className="h-3 w-3" />
+                          <span>Select</span>
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+              </div>
+
+              <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsVendorPickerForConfirmationOpen(false);
+                    setVendorPickerSearch('');
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
       </div>
