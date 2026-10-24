@@ -255,10 +255,6 @@ export default function PaymentConfirmationModal({
         ['Payment Mode', 'Direct Bank Transfer / Electronic Credit'],
       ];
 
-      if (displayNotes) {
-        tableRows.push(['Remarks / Purpose', displayNotes]);
-      }
-
       tableRows.forEach(([label, value], idx) => {
         const rowHeight = 10;
         const isEven = idx % 2 === 0;
@@ -570,12 +566,6 @@ export default function PaymentConfirmationModal({
                           Direct Bank Transfer / Electronic Credit
                         </td>
                       </tr>
-                      {displayNotes && (
-                        <tr className="bg-slate-50/50">
-                          <td className="py-2.5 px-3 text-slate-500 font-semibold">Remarks / Purpose</td>
-                          <td className="py-2.5 px-3 text-slate-700 italic">{displayNotes}</td>
-                        </tr>
-                      )}
                     </tbody>
                   </table>
                 </div>
