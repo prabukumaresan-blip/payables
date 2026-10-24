@@ -962,13 +962,47 @@ export async function getPdcs(filters: { status?: string; companyId?: string } =
     const { data, error } = await query;
 
     if (!error && data) {
-      // Filter in JS to find payables with PDC
+      // Normalize pdc property (Supabase returns pdc as an array because pdcs table has foreign key to payables)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let results = (data as any[]).filter(p => p.category_id === 'cat-4' || p.pdc);
+      const normalizedData = (data as any[]).map(p => {
+        let pdcRecord = p.pdc;
+        if (Array.isArray(pdcRecord)) {
+          pdcRecord = pdcRecord[0] || null;
+        }
+
+        // If payable is categorized as PDC (cat-4) or has PDC dates/counts but no pdcs row yet, synthesize pdc object
+        if (!pdcRecord && (p.category_id === 'cat-4' || p.pdc_start_date)) {
+          pdcRecord = {
+            id: 'pdc-' + p.id,
+            payable_id: p.id,
+            cheque_no: p.reference_no || '',
+            bank_name: p.bank_account || null,
+            cheque_date: p.due_date || p.pdc_start_date,
+            presented_date: p.payment_date || null,
+            status: p.status === 'paid' ? 'cleared' : 'pending',
+            reminder_days: 3
+          };
+        }
+
+        return {
+          ...p,
+          pdc: pdcRecord
+        };
+      });
+
+      // Filter to find payables with PDC
+      let results = normalizedData.filter(p => p.pdc && (p.category_id === 'cat-4' || p.pdc));
 
       if (filters.status && filters.status !== 'all') {
         results = results.filter(p => p.pdc?.status === filters.status);
       }
+
+      // Sort by cheque_date ascending
+      results.sort((a, b) => {
+        const dateA = a.pdc?.cheque_date || a.due_date || '';
+        const dateB = b.pdc?.cheque_date || b.due_date || '';
+        return dateA.localeCompare(dateB);
+      });
 
       return results.map(p => ({
         ...p,
