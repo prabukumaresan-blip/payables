@@ -1,26 +1,24 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { format, parseISO } from 'date-fns';
 import { 
   X, 
   Download, 
   FileText, 
-  CheckCircle2, 
   Building2, 
   Landmark, 
   Phone, 
   Mail, 
   Calendar, 
-  Receipt, 
   Share2,
   Copy,
   Check,
   Loader2,
-  Image as ImageIcon,
-  Printer
+  Printer,
+  ShieldCheck,
+  CheckCircle2
 } from 'lucide-react';
 import { Vendor, PaymentHistory, Payable, Company } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
@@ -43,9 +41,7 @@ export default function PaymentConfirmationModal({
   payable,
   company
 }: PaymentConfirmationModalProps) {
-  const receiptRef = useRef<HTMLDivElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const [downloadingImg, setDownloadingImg] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
   if (!isOpen || !payment) return null;
@@ -73,112 +69,258 @@ export default function PaymentConfirmationModal({
     ? `PAY-${payment.reference_no}` 
     : `PAY-${payment.id.slice(0, 8).toUpperCase()}`;
 
-  const cleanZohoId = payment.zoho_payment_id || 
-    (payment.notes && payment.notes.match(/\[ZOHO_PAYMENT:([^\]]+)\]/)?.[1]);
-
   // Clean notes excluding internal [ZOHO_PAYMENT:...] tags
   const displayNotes = payment.notes ? payment.notes.replace(/\[ZOHO_PAYMENT:[^\]]+\]/g, '').trim() : '';
 
-  // Standard safe filename
-  const getFilename = (ext: string) => {
+  // Safe filename
+  const getFilename = () => {
     const sanitizedVendor = vendor.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     const ref = payment.reference_no ? payment.reference_no.replace(/[^a-zA-Z0-9_-]/g, '_') : payment.id.slice(0, 6);
-    return `Payment_Confirmation_${sanitizedVendor}_${ref}.${ext}`;
+    return `Payment_Advice_${sanitizedVendor}_${ref}.pdf`;
   };
 
-  // Browser Print / Save as PDF Fallback (Instant & never freezes)
+  // Browser Print / Save as PDF
   const handlePrint = () => {
     window.print();
   };
 
-  // Download PDF using direct jsPDF layout first, with canvas fallback
-  const handleDownloadPDF = async () => {
+  // Pure Vector Corporate PDF Generation (Instant, Razor-Sharp, Zero Freezing)
+  const handleDownloadPDF = () => {
     setDownloadingPdf(true);
     try {
-      if (receiptRef.current) {
-        // Fast, high-res canvas render
-        const element = receiptRef.current;
-        const canvas = await html2canvas(element, {
-          scale: 1.5, // 1.5 scale prevents browser memory lockup/freezing while maintaining crisp quality
-          useCORS: true,
-          backgroundColor: '#FFFFFF',
-          logging: false
-        });
+      const doc = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
 
-        const imgWidth = 210; // A4 mm
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        const pdf = new jsPDF({
-          orientation: 'p',
-          unit: 'mm',
-          format: 'a4',
-          compress: true
-        });
+      const pageWidth = 210;
+      const margin = 18;
+      const contentWidth = pageWidth - (margin * 2);
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
-        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, Math.min(imgHeight, 297), undefined, 'FAST');
-        pdf.save(getFilename('pdf'));
-      } else {
-        // Direct jsPDF generation fallback if DOM element is detached
-        const pdf = new jsPDF();
-        pdf.setFontSize(18);
-        pdf.text(companyName, 20, 25);
-        pdf.setFontSize(12);
-        pdf.text(`CR No: ${companyCr}  VAT No: ${companyTax}`, 20, 32);
-        pdf.line(20, 35, 190, 35);
+      // Colors
+      const primaryColor: [number, number, number] = [15, 23, 42]; // Slate 900
+      const accentColor: [number, number, number] = [16, 185, 129]; // Emerald 500
+      const subtleColor: [number, number, number] = [100, 116, 139]; // Slate 500
+      const lightBg: [number, number, number] = [248, 250, 252]; // Slate 50
+      const borderColor: [number, number, number] = [226, 232, 240]; // Slate 200
 
-        pdf.setFontSize(14);
-        pdf.text('PAYMENT CONFIRMATION ADVICE', 20, 45);
-        pdf.setFontSize(11);
-        pdf.text(`Voucher: ${voucherNumber}`, 20, 55);
-        pdf.text(`Date: ${formattedDate}`, 20, 62);
-        pdf.text(`Beneficiary: ${vendor.name}`, 20, 72);
-        pdf.text(`Bank / Account: ${payment.bank_account || vendor.bank_account || vendor.account_no || 'N/A'}`, 20, 79);
-        pdf.text(`Amount: ${formatOMR(payment.amount)}`, 20, 90);
-        pdf.text(`Reference No: ${payment.reference_no || 'N/A'}`, 20, 97);
-        if (displayNotes) {
-          pdf.text(`Notes: ${displayNotes}`, 20, 107);
-        }
-        pdf.save(getFilename('pdf'));
+      // 1. Top Decorative Brand Accent Strip
+      doc.setFillColor(...accentColor);
+      doc.rect(0, 0, pageWidth, 4, 'F');
+
+      // 2. Company Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(...primaryColor);
+      doc.text(companyName.toUpperCase(), margin, 20);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...subtleColor);
+      doc.text('Sultanate of Oman • Finance & Corporate Accounts', margin, 26);
+      
+      const regDetails = [];
+      if (companyCr) regDetails.push(`Commercial Reg (CR): ${companyCr}`);
+      if (companyTax) regDetails.push(`VAT / Tax ID: ${companyTax}`);
+      if (regDetails.length > 0) {
+        doc.text(regDetails.join('   |   '), margin, 31);
       }
+
+      // Top Right Document Badge
+      doc.setFillColor(236, 253, 245); // Emerald 50
+      doc.setDrawColor(167, 243, 208); // Emerald 200
+      doc.roundedRect(pageWidth - margin - 58, 12, 58, 22, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(6, 95, 70); // Emerald 800
+      doc.text('PAYMENT ADVICE', pageWidth - margin - 29, 18, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...subtleColor);
+      doc.text(`Ref: ${voucherNumber}`, pageWidth - margin - 29, 24, { align: 'center' });
+      doc.text(`Date: ${formattedDate}`, pageWidth - margin - 29, 29, { align: 'center' });
+
+      // Horizontal Divider
+      doc.setDrawColor(...borderColor);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 38, pageWidth - margin, 38);
+
+      // 3. Dual Information Panels (Beneficiary vs Remittance)
+      const colWidth = (contentWidth - 6) / 2;
+      const cardY = 44;
+      const cardHeight = 44;
+
+      // Left Panel: Beneficiary
+      doc.setFillColor(...lightBg);
+      doc.setDrawColor(...borderColor);
+      doc.roundedRect(margin, cardY, colWidth, cardHeight, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('BENEFICIARY / PAID TO', margin + 6, cardY + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(...primaryColor);
+      doc.text(vendor.name, margin + 6, cardY + 16, { maxWidth: colWidth - 12 });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...subtleColor);
+      let leftY = cardY + 23;
+      if (vendor.contact_person) {
+        doc.text(`Attn: ${vendor.contact_person}`, margin + 6, leftY);
+        leftY += 5;
+      }
+      if (vendor.phone) {
+        doc.text(`Phone: ${vendor.phone}`, margin + 6, leftY);
+        leftY += 5;
+      }
+      if (vendor.email) {
+        doc.text(`Email: ${vendor.email}`, margin + 6, leftY);
+      }
+
+      // Right Panel: Remittance Details
+      const rightColX = margin + colWidth + 6;
+      doc.setFillColor(...lightBg);
+      doc.setDrawColor(...borderColor);
+      doc.roundedRect(rightColX, cardY, colWidth, cardHeight, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('REMITTANCE / CREDITED ACCOUNT', rightColX + 6, cardY + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...primaryColor);
+      doc.text(vendor.bank_name || 'Bank Muscat / Commercial Bank', rightColX + 6, cardY + 16);
+
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+      const acc = payment.bank_account || vendor.bank_account || vendor.account_no || 'Standard Bank Transfer';
+      doc.text(`Acc: ${acc}`, rightColX + 6, cardY + 24);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...subtleColor);
+      if (vendor.swift_code) {
+        doc.text(`SWIFT / BIC: ${vendor.swift_code}`, rightColX + 6, cardY + 31);
+      }
+      doc.text('Payment Channel: Electronic Funds Transfer', rightColX + 6, cardY + 37);
+
+      // 4. Highlighted Amount Banner
+      const amountBannerY = 94;
+      doc.setFillColor(236, 253, 245); // Emerald 50
+      doc.setDrawColor(167, 243, 208); // Emerald 200
+      doc.roundedRect(margin, amountBannerY, contentWidth, 24, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(6, 95, 70);
+      doc.text('TOTAL AMOUNT TRANSFERRED', margin + 8, amountBannerY + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.setTextColor(4, 120, 87); // Emerald 700
+      doc.text(formatOMR(payment.amount), margin + 8, amountBannerY + 18);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(6, 95, 70);
+      doc.text('STATUS: SETTLED IN FULL', pageWidth - margin - 8, amountBannerY + 14, { align: 'right' });
+
+      // 5. Transaction Particulars Table (Clean Corporate Table - No Zoho Details)
+      const tableY = 126;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...primaryColor);
+      doc.text('TRANSACTION PARTICULARS', margin, tableY);
+
+      let currentY = tableY + 4;
+      doc.setDrawColor(...borderColor);
+      doc.setLineWidth(0.3);
+
+      const tableRows: [string, string][] = [
+        ['Payment Date', formattedDate],
+        ['Voucher / Reference No', payment.reference_no || voucherNumber],
+        ['Applied Bill / Description', payable?.title || 'Vendor Payment Settlement'],
+        ['Payment Mode', 'Direct Bank Transfer / Electronic Credit'],
+      ];
+
+      if (displayNotes) {
+        tableRows.push(['Remarks / Purpose', displayNotes]);
+      }
+
+      tableRows.forEach(([label, value], idx) => {
+        const rowHeight = 10;
+        const isEven = idx % 2 === 0;
+
+        // Background
+        doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+        doc.rect(margin, currentY, contentWidth, rowHeight, 'FD');
+
+        // Label Column
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(label, margin + 6, currentY + 6.5);
+
+        // Value Column
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(value, margin + 65, currentY + 6.5, { maxWidth: contentWidth - 70 });
+
+        currentY += rowHeight;
+      });
+
+      // 6. Corporate Signoff & Verification Strip
+      const signoffY = Math.max(currentY + 22, 210);
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text('This official advice voucher confirms that payment has been authorized and dispatched.', margin, signoffY);
+      doc.text(`Electronically verified by Accounts & Payables System • ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, margin, signoffY + 5);
+
+      // Signatory line
+      const sigX = pageWidth - margin - 55;
+      doc.setDrawColor(203, 213, 225);
+      doc.line(sigX, signoffY + 8, sigX + 55, signoffY + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('AUTHORIZED SIGNATORY', sigX + 27.5, signoffY + 13, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Finance & Treasury Dept.', sigX + 27.5, signoffY + 17, { align: 'center' });
+
+      // Bottom footer rule
+      doc.setDrawColor(...borderColor);
+      doc.line(margin, 280, pageWidth - margin, 280);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Confidential • Internal & Vendor Remittance Documentation', margin, 284);
+      doc.text('Page 1 of 1', pageWidth - margin, 284, { align: 'right' });
+
+      // Save PDF
+      doc.save(getFilename());
     } catch (err) {
-      console.error('Failed to generate PDF canvas, launching print dialog fallback:', err);
-      // If canvas generation fails or is blocked, trigger browser print to save as PDF
+      console.error('Failed to generate vector PDF, using print fallback:', err);
       window.print();
     } finally {
       setDownloadingPdf(false);
-    }
-  };
-
-  // Download Image (PNG)
-  const handleDownloadImage = async () => {
-    if (!receiptRef.current) return;
-    setDownloadingImg(true);
-    try {
-      const element = receiptRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 1.5,
-        useCORS: true,
-        backgroundColor: '#FFFFFF',
-        logging: false
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = getFilename('png');
-      link.href = imgData;
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(() => {
-        try {
-          document.body.removeChild(link);
-        } catch {}
-      }, 150);
-    } catch (err) {
-      console.error('Failed to generate image:', err);
-      alert('Could not generate image. You can use "Print / Save PDF" as a direct alternative.');
-    } finally {
-      setDownloadingImg(false);
     }
   };
 
@@ -198,7 +340,7 @@ export default function PaymentConfirmationModal({
 
   // Copy details
   const handleCopySummary = () => {
-    const text = `Payment Confirmation Advice\nVendor: ${vendor.name}\nAmount: ${formatOMR(payment.amount)}\nDate: ${formattedDate}\nReference: ${payment.reference_no || 'N/A'}\nAccount: ${payment.bank_account || vendor.bank_account || vendor.account_no || 'N/A'}`;
+    const text = `PAYMENT CONFIRMATION ADVICE\n\nBeneficiary: ${vendor.name}\nAmount: ${formatOMR(payment.amount)}\nDate: ${formattedDate}\nReference No: ${payment.reference_no || voucherNumber}\nAccount: ${payment.bank_account || vendor.bank_account || vendor.account_no || 'N/A'}\nPayer: ${companyName}`;
     navigator.clipboard.writeText(text);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -206,7 +348,7 @@ export default function PaymentConfirmationModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
-      {/* Backdrop with explicit click handler */}
+      {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-slate-900/75 backdrop-blur-sm transition-opacity print-hide" 
         onClick={onClose} 
@@ -246,7 +388,7 @@ export default function PaymentConfirmationModal({
               type="button"
               onClick={handlePrint}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition cursor-pointer"
-              title="Print document or Save as PDF"
+              title="Print document or Save via system dialog"
             >
               <Printer className="h-3.5 w-3.5 text-indigo-300" />
               <span className="hidden sm:inline">Print</span>
@@ -254,26 +396,15 @@ export default function PaymentConfirmationModal({
 
             <button
               type="button"
-              onClick={handleDownloadImage}
-              disabled={downloadingImg}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition disabled:opacity-50 cursor-pointer"
-              title="Download Confirmation as PNG image"
-            >
-              {downloadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
-              <span className="hidden sm:inline">Image</span>
-            </button>
-
-            <button
-              type="button"
               onClick={handleDownloadPDF}
               disabled={downloadingPdf}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition disabled:opacity-50 cursor-pointer"
-              title="Download Official PDF Confirmation Advice"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-700/20 transition disabled:opacity-50 cursor-pointer"
+              title="Download High-Resolution Corporate PDF Advice"
             >
               {downloadingPdf ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Generating...</span>
+                  <span>Generating PDF...</span>
                 </>
               ) : (
                 <>
@@ -294,52 +425,51 @@ export default function PaymentConfirmationModal({
           </div>
         </div>
 
-        {/* Scrollable Printable Confirmation Document */}
+        {/* Scrollable Printable Confirmation Document (Corporate Styled View) */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70 flex justify-center">
-          <div 
-            ref={receiptRef}
-            className="printable-voucher w-full max-w-xl bg-white rounded-xl border border-slate-200/90 shadow-md p-6 sm:p-8 space-y-6 text-slate-800"
-          >
+          <div className="printable-voucher w-full max-w-xl bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6 text-slate-800">
+            
             {/* Advice Header */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-5 gap-4">
+            <div className="flex items-start justify-between border-b border-slate-200/80 pb-5 gap-4">
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shadow-xs">
                     {companyName.slice(0, 1)}
                   </div>
-                  <h1 className="text-base font-extrabold tracking-tight text-slate-900 uppercase">
-                    {companyName}
-                  </h1>
+                  <div>
+                    <h1 className="text-sm font-extrabold tracking-tight text-slate-900 uppercase">
+                      {companyName}
+                    </h1>
+                    <p className="text-[10px] text-slate-500 font-medium">Sultanate of Oman • Finance & Accounts</p>
+                  </div>
                 </div>
-                <div className="text-[11px] text-slate-500 space-y-0.5">
-                  <p>Sultanate of Oman • Finance & Accounts</p>
-                  {(companyCr || companyTax) && (
-                    <p className="font-mono text-[10px]">
-                      {companyCr && `CR No: ${companyCr}`}
-                      {companyCr && companyTax && ' • '}
-                      {companyTax && `VAT No: ${companyTax}`}
-                    </p>
-                  )}
-                </div>
+                {(companyCr || companyTax) && (
+                  <div className="text-[10px] font-mono text-slate-500 pt-1">
+                    {companyCr && <span>CR No: <strong>{companyCr}</strong></span>}
+                    {companyCr && companyTax && <span className="mx-2">•</span>}
+                    {companyTax && <span>VAT No: <strong>{companyTax}</strong></span>}
+                  </div>
+                )}
               </div>
 
               <div className="text-right shrink-0">
-                <span className="inline-block px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold tracking-wider uppercase">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold tracking-wider uppercase">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                   Payment Confirmed
                 </span>
-                <p className="text-[11px] font-mono text-slate-500 mt-1.5">{voucherNumber}</p>
-                <p className="text-[11px] text-slate-400">{formattedDate}</p>
+                <p className="text-[11px] font-mono font-semibold text-slate-700 mt-1.5">{voucherNumber}</p>
+                <p className="text-[10px] text-slate-400">{formattedDate}</p>
               </div>
             </div>
 
-            {/* Beneficiary & Payer Cards */}
+            {/* Beneficiary & Remittance Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
               {/* Beneficiary */}
-              <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-1.5">
+              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
                   Beneficiary / Paid To
                 </span>
-                <p className="text-sm font-bold text-slate-900">{vendor.name}</p>
+                <p className="text-sm font-bold text-slate-900 leading-snug">{vendor.name}</p>
                 {vendor.contact_person && (
                   <p className="text-[11px] text-slate-600">Attn: {vendor.contact_person}</p>
                 )}
@@ -359,16 +489,16 @@ export default function PaymentConfirmationModal({
                 </div>
               </div>
 
-              {/* Bank & Remittance details */}
-              <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-1.5">
+              {/* Remittance / Account Credited */}
+              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
                   Remittance / Account Credited
                 </span>
-                <p className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <Landmark className="h-3.5 w-3.5 text-slate-500" />
                   {vendor.bank_name || 'Bank Muscat / Commercial Bank'}
                 </p>
-                <p className="font-mono text-xs text-slate-700 bg-white px-2 py-1 rounded border border-slate-200/60 inline-block font-medium">
+                <p className="font-mono text-xs text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 inline-block font-semibold">
                   {payment.bank_account || vendor.bank_account || vendor.account_no || 'Standard Bank Account'}
                 </p>
                 {vendor.swift_code && (
@@ -380,24 +510,24 @@ export default function PaymentConfirmationModal({
             </div>
 
             {/* Payment Amount Display Card */}
-            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-emerald-500/10 border border-emerald-200 flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border border-emerald-200/80 flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">
-                  Amount Transferred
+                  Total Amount Transferred
                 </span>
                 <p className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-700 mt-0.5">
                   {formatOMR(payment.amount)}
                 </p>
                 <span className="text-[10px] font-semibold text-emerald-600 block mt-0.5">
-                  Omani Rials • Transferred in Full
+                  Omani Rials • Settled in Full
                 </span>
               </div>
-              <div className="p-3 rounded-full bg-emerald-100 text-emerald-700">
-                <CheckCircle2 className="h-7 w-7" />
+              <div className="p-2.5 rounded-full bg-emerald-100 text-emerald-700 shadow-2xs">
+                <ShieldCheck className="h-6 w-6" />
               </div>
             </div>
 
-            {/* Transaction Particulars Table */}
+            {/* Transaction Particulars Table (Clean Corporate Table - No Zoho Details) */}
             <div className="space-y-2">
               <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Transaction Particulars
@@ -406,40 +536,33 @@ export default function PaymentConfirmationModal({
                 <table className="w-full text-left">
                   <tbody className="divide-y divide-slate-100">
                     <tr className="bg-slate-50/50">
-                      <td className="py-2 px-3 text-slate-500 font-medium w-1/3">Payment Date</td>
-                      <td className="py-2 px-3 font-semibold text-slate-800">{formattedDate}</td>
+                      <td className="py-2.5 px-3 text-slate-500 font-semibold w-1/3">Payment Date</td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">{formattedDate}</td>
                     </tr>
                     <tr>
-                      <td className="py-2 px-3 text-slate-500 font-medium">Reference / Txn No</td>
-                      <td className="py-2 px-3 font-mono font-semibold text-slate-900">
-                        {payment.reference_no || 'Direct Transfer'}
+                      <td className="py-2.5 px-3 text-slate-500 font-semibold">Voucher / Reference No</td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
+                        {payment.reference_no || voucherNumber}
                       </td>
                     </tr>
                     {payable && (
                       <tr className="bg-slate-50/50">
-                        <td className="py-2 px-3 text-slate-500 font-medium">Applied Bill / Payable</td>
-                        <td className="py-2 px-3 text-slate-800">
-                          <span className="font-semibold">{payable.title}</span>
-                          {payable.zoho_bill_number && (
-                            <span className="ml-2 font-mono text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
-                              Zoho Bill: {payable.zoho_bill_number}
-                            </span>
-                          )}
+                        <td className="py-2.5 px-3 text-slate-500 font-semibold">Applied Bill / Description</td>
+                        <td className="py-2.5 px-3 text-slate-800 font-medium">
+                          {payable.title}
                         </td>
                       </tr>
                     )}
-                    {cleanZohoId && (
-                      <tr>
-                        <td className="py-2 px-3 text-slate-500 font-medium">Zoho Books Payment</td>
-                        <td className="py-2 px-3 font-mono text-xs text-blue-700 font-semibold">
-                          #{cleanZohoId} (Synchronized)
-                        </td>
-                      </tr>
-                    )}
+                    <tr>
+                      <td className="py-2.5 px-3 text-slate-500 font-semibold">Payment Mode</td>
+                      <td className="py-2.5 px-3 text-slate-800">
+                        Direct Bank Transfer / Electronic Credit
+                      </td>
+                    </tr>
                     {displayNotes && (
                       <tr className="bg-slate-50/50">
-                        <td className="py-2 px-3 text-slate-500 font-medium">Remarks / Description</td>
-                        <td className="py-2 px-3 text-slate-700 italic">{displayNotes}</td>
+                        <td className="py-2.5 px-3 text-slate-500 font-semibold">Remarks / Purpose</td>
+                        <td className="py-2.5 px-3 text-slate-700 italic">{displayNotes}</td>
                       </tr>
                     )}
                   </tbody>
@@ -451,10 +574,10 @@ export default function PaymentConfirmationModal({
             <div className="pt-6 border-t border-slate-200 flex items-end justify-between text-xs text-slate-400">
               <div className="space-y-1">
                 <p className="text-[10px] text-slate-400 italic">
-                  This document serves as an electronic confirmation of payment.
+                  This document serves as an official confirmation of payment.
                 </p>
                 <p className="text-[10px] font-mono text-slate-400">
-                  Generated by Payables System • {format(new Date(), 'dd/MM/yyyy HH:mm')}
+                  Verified by Accounts & Payables System • {format(new Date(), 'dd/MM/yyyy HH:mm')}
                 </p>
               </div>
 
