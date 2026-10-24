@@ -1,24 +1,23 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import jsPDF from 'jspdf';
 import { format, parseISO } from 'date-fns';
 import { 
   X, 
   Download, 
   FileText, 
-  Building2, 
   Landmark, 
   Phone, 
   Mail, 
-  Calendar, 
   Share2,
   Copy,
   Check,
   Loader2,
   Printer,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  MessageCircle
 } from 'lucide-react';
 import { Vendor, PaymentHistory, Payable, Company } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
@@ -43,6 +42,8 @@ export default function PaymentConfirmationModal({
 }: PaymentConfirmationModalProps) {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
+  const [customPhone, setCustomPhone] = useState(vendor.phone || '');
 
   if (!isOpen || !payment) return null;
 
@@ -84,7 +85,7 @@ export default function PaymentConfirmationModal({
     window.print();
   };
 
-  // Pure Vector Corporate PDF Generation (Instant, Razor-Sharp, Zero Freezing)
+  // Pure Vector Corporate PDF Generation (Instant, Crisp, Zero Freezing, No Signatory)
   const handleDownloadPDF = () => {
     setDownloadingPdf(true);
     try {
@@ -99,14 +100,14 @@ export default function PaymentConfirmationModal({
       const margin = 18;
       const contentWidth = pageWidth - (margin * 2);
 
-      // Colors
+      // Corporate Brand Colors
       const primaryColor: [number, number, number] = [15, 23, 42]; // Slate 900
       const accentColor: [number, number, number] = [16, 185, 129]; // Emerald 500
       const subtleColor: [number, number, number] = [100, 116, 139]; // Slate 500
       const lightBg: [number, number, number] = [248, 250, 252]; // Slate 50
       const borderColor: [number, number, number] = [226, 232, 240]; // Slate 200
 
-      // 1. Top Decorative Brand Accent Strip
+      // 1. Top Brand Line
       doc.setFillColor(...accentColor);
       doc.rect(0, 0, pageWidth, 4, 'F');
 
@@ -281,28 +282,23 @@ export default function PaymentConfirmationModal({
         currentY += rowHeight;
       });
 
-      // 6. Corporate Signoff & Verification Strip
-      const signoffY = Math.max(currentY + 22, 210);
+      // 6. Corporate Verification (Without Authorized Signatory)
+      const signoffY = Math.max(currentY + 24, 215);
+
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(...borderColor);
+      doc.roundedRect(margin, signoffY, contentWidth, 20, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
+      doc.text('ELECTRONIC PAYMENT VERIFICATION', margin + 6, signoffY + 7);
 
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text('This official advice voucher confirms that payment has been authorized and dispatched.', margin, signoffY);
-      doc.text(`Electronically verified by Accounts & Payables System • ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, margin, signoffY + 5);
-
-      // Signatory line
-      const sigX = pageWidth - margin - 55;
-      doc.setDrawColor(203, 213, 225);
-      doc.line(sigX, signoffY + 8, sigX + 55, signoffY + 8);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(71, 85, 105);
-      doc.text('AUTHORIZED SIGNATORY', sigX + 27.5, signoffY + 13, { align: 'center' });
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(148, 163, 184);
-      doc.text('Finance & Treasury Dept.', sigX + 27.5, signoffY + 17, { align: 'center' });
+      doc.setTextColor(100, 116, 139);
+      doc.text('This document is electronically generated and authenticated by Accounts & Payables System.', margin + 6, signoffY + 12);
+      doc.text(`Generated on ${format(new Date(), 'dd/MM/yyyy HH:mm')} • Official record of remittance`, margin + 6, signoffY + 16);
 
       // Bottom footer rule
       doc.setDrawColor(...borderColor);
@@ -324,11 +320,11 @@ export default function PaymentConfirmationModal({
     }
   };
 
-  // Send WhatsApp directly
-  const handleSendWhatsApp = () => {
+  // Launch WhatsApp with target phone
+  const triggerWhatsAppWithPhone = (phoneNum?: string | null) => {
     openWhatsApp({
       vendorName: vendor.name,
-      phoneNumber: vendor.phone,
+      phoneNumber: phoneNum,
       amount: Number(payment.amount),
       paymentDate: payment.payment_date,
       referenceNo: payment.reference_no,
@@ -336,6 +332,22 @@ export default function PaymentConfirmationModal({
       companyName: companyName,
       title: payable?.title
     });
+  };
+
+  // Handle WhatsApp button click:
+  // If vendor has phone, dispatch directly; otherwise show quick phone input dialog
+  const handleWhatsAppClick = () => {
+    if (vendor.phone && vendor.phone.trim()) {
+      triggerWhatsAppWithPhone(vendor.phone);
+    } else {
+      setIsPhoneModalOpen(true);
+    }
+  };
+
+  const handleSendCustomPhoneWhatsApp = (e: React.FormEvent) => {
+    e.preventDefault();
+    triggerWhatsAppWithPhone(customPhone);
+    setIsPhoneModalOpen(false);
   };
 
   // Copy details
@@ -347,272 +359,345 @@ export default function PaymentConfirmationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-slate-900/75 backdrop-blur-sm transition-opacity print-hide" 
-        onClick={onClose} 
-      />
+    <>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-slate-900/75 backdrop-blur-sm transition-opacity print-hide" 
+          onClick={onClose} 
+        />
 
-      {/* Modal Container */}
-      <div 
-        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150"
-        onClick={(e) => e.stopPropagation()}
-      >
-        
-        {/* Top Control Header */}
-        <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between border-b border-white/10 shrink-0 print-hide">
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-emerald-400" />
-            <div>
-              <h2 className="text-sm font-bold tracking-wide text-white">Payment Confirmation Advice</h2>
-              <p className="text-[10px] text-slate-400 font-mono">{voucherNumber}</p>
+        {/* Modal Container */}
+        <div 
+          className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150"
+          onClick={(e) => e.stopPropagation()}
+        >
+          
+          {/* Top Control Header */}
+          <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between border-b border-white/10 shrink-0 print-hide">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-emerald-400" />
+              <div>
+                <h2 className="text-sm font-bold tracking-wide text-white">Payment Confirmation Advice</h2>
+                <p className="text-[10px] text-slate-400 font-mono">{voucherNumber}</p>
+              </div>
             </div>
-          </div>
 
-          {/* Quick Action Toolbar */}
-          <div className="flex items-center gap-2">
-            {vendor.phone && (
+            {/* Quick Action Toolbar */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleSendWhatsApp}
-                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
-                title="Send via WhatsApp"
+                onClick={handleWhatsAppClick}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                title="Send Payment Advice to Vendor via WhatsApp"
               >
                 <Share2 className="h-3.5 w-3.5" />
                 <span>WhatsApp</span>
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition cursor-pointer"
-              title="Print document or Save via system dialog"
-            >
-              <Printer className="h-3.5 w-3.5 text-indigo-300" />
-              <span className="hidden sm:inline">Print</span>
-            </button>
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition cursor-pointer"
+                title="Print document or Save via system dialog"
+              >
+                <Printer className="h-3.5 w-3.5 text-indigo-300" />
+                <span className="hidden sm:inline">Print</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleDownloadPDF}
-              disabled={downloadingPdf}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-700/20 transition disabled:opacity-50 cursor-pointer"
-              title="Download High-Resolution Corporate PDF Advice"
-            >
-              {downloadingPdf ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Generating PDF...</span>
-                </>
-              ) : (
-                <>
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download PDF</span>
-                </>
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={handleDownloadPDF}
+                disabled={downloadingPdf}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-700/20 transition disabled:opacity-50 cursor-pointer"
+                title="Download High-Resolution Corporate PDF Advice"
+              >
+                {downloadingPdf ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Generating PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download PDF</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                title="Close window"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable Printable Confirmation Document (Corporate Styled View) */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70 flex justify-center">
+            <div className="printable-voucher w-full max-w-xl bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6 text-slate-800">
+              
+              {/* Advice Header */}
+              <div className="flex items-start justify-between border-b border-slate-200/80 pb-5 gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shadow-xs">
+                      {companyName.slice(0, 1)}
+                    </div>
+                    <div>
+                      <h1 className="text-sm font-extrabold tracking-tight text-slate-900 uppercase">
+                        {companyName}
+                      </h1>
+                      <p className="text-[10px] text-slate-500 font-medium">Sultanate of Oman • Finance & Accounts</p>
+                    </div>
+                  </div>
+                  {(companyCr || companyTax) && (
+                    <div className="text-[10px] font-mono text-slate-500 pt-1">
+                      {companyCr && <span>CR No: <strong>{companyCr}</strong></span>}
+                      {companyCr && companyTax && <span className="mx-2">•</span>}
+                      {companyTax && <span>VAT No: <strong>{companyTax}</strong></span>}
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold tracking-wider uppercase">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                    Payment Confirmed
+                  </span>
+                  <p className="text-[11px] font-mono font-semibold text-slate-700 mt-1.5">{voucherNumber}</p>
+                  <p className="text-[10px] text-slate-400">{formattedDate}</p>
+                </div>
+              </div>
+
+              {/* Beneficiary & Remittance Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+                {/* Beneficiary */}
+                <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Beneficiary / Paid To
+                  </span>
+                  <p className="text-sm font-bold text-slate-900 leading-snug">{vendor.name}</p>
+                  {vendor.contact_person && (
+                    <p className="text-[11px] text-slate-600">Attn: {vendor.contact_person}</p>
+                  )}
+                  <div className="space-y-0.5 text-[11px] text-slate-500 pt-0.5">
+                    {vendor.phone && (
+                      <p className="flex items-center gap-1.5">
+                        <Phone className="h-3 w-3 text-slate-400" />
+                        {vendor.phone}
+                      </p>
+                    )}
+                    {vendor.email && (
+                      <p className="flex items-center gap-1.5">
+                        <Mail className="h-3 w-3 text-slate-400" />
+                        {vendor.email}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Remittance / Account Credited */}
+                <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Remittance / Account Credited
+                  </span>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Landmark className="h-3.5 w-3.5 text-slate-500" />
+                    {vendor.bank_name || 'Bank Muscat / Commercial Bank'}
+                  </p>
+                  <p className="font-mono text-xs text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 inline-block font-semibold">
+                    {payment.bank_account || vendor.bank_account || vendor.account_no || 'Standard Bank Account'}
+                  </p>
+                  {vendor.swift_code && (
+                    <p className="text-[10px] font-mono text-slate-500">
+                      SWIFT: <strong>{vendor.swift_code}</strong>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Payment Amount Display Card */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border border-emerald-200/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">
+                    Total Amount Transferred
+                  </span>
+                  <p className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-700 mt-0.5">
+                    {formatOMR(payment.amount)}
+                  </p>
+                  <span className="text-[10px] font-semibold text-emerald-600 block mt-0.5">
+                    Omani Rials • Settled in Full
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-full bg-emerald-100 text-emerald-700 shadow-2xs">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+              </div>
+
+              {/* Transaction Particulars Table (Clean Corporate Table - No Zoho Details) */}
+              <div className="space-y-2">
+                <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Transaction Particulars
+                </h3>
+                <div className="overflow-hidden rounded-xl border border-slate-200 text-xs">
+                  <table className="w-full text-left">
+                    <tbody className="divide-y divide-slate-100">
+                      <tr className="bg-slate-50/50">
+                        <td className="py-2.5 px-3 text-slate-500 font-semibold w-1/3">Payment Date</td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-800">{formattedDate}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 px-3 text-slate-500 font-semibold">Voucher / Reference No</td>
+                        <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
+                          {payment.reference_no || voucherNumber}
+                        </td>
+                      </tr>
+                      {payable && (
+                        <tr className="bg-slate-50/50">
+                          <td className="py-2.5 px-3 text-slate-500 font-semibold">Applied Bill / Description</td>
+                          <td className="py-2.5 px-3 text-slate-800 font-medium">
+                            {payable.title}
+                          </td>
+                        </tr>
+                      )}
+                      <tr>
+                        <td className="py-2.5 px-3 text-slate-500 font-semibold">Payment Mode</td>
+                        <td className="py-2.5 px-3 text-slate-800">
+                          Direct Bank Transfer / Electronic Credit
+                        </td>
+                      </tr>
+                      {displayNotes && (
+                        <tr className="bg-slate-50/50">
+                          <td className="py-2.5 px-3 text-slate-500 font-semibold">Remarks / Purpose</td>
+                          <td className="py-2.5 px-3 text-slate-700 italic">{displayNotes}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Electronic Verification Strip (Without Authorized Signatory) */}
+              <div className="pt-5 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    This document serves as an official electronic confirmation of payment.
+                  </p>
+                  <p className="text-[9px] font-mono text-slate-400">
+                    Verified & Dispatched by Accounts & Payables System • {format(new Date(), 'dd/MM/yyyy HH:mm')}
+                  </p>
+                </div>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  Status: Dispatched
+                </span>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Modal Bottom Footer */}
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0 print-hide">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCopySummary}
+                className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition font-medium cursor-pointer"
+              >
+                {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                <span>{copiedLink ? 'Copied to Clipboard' : 'Copy Text'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleWhatsAppClick}
+                className="inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer"
+              >
+                <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Share WhatsApp</span>
+              </button>
+            </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-              title="Close window"
+              className="px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold transition shadow-xs cursor-pointer"
             >
-              <X className="h-4 w-4" />
+              Close
             </button>
           </div>
+
         </div>
+      </div>
 
-        {/* Scrollable Printable Confirmation Document (Corporate Styled View) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70 flex justify-center">
-          <div className="printable-voucher w-full max-w-xl bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6 text-slate-800">
-            
-            {/* Advice Header */}
-            <div className="flex items-start justify-between border-b border-slate-200/80 pb-5 gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shadow-xs">
-                    {companyName.slice(0, 1)}
-                  </div>
-                  <div>
-                    <h1 className="text-sm font-extrabold tracking-tight text-slate-900 uppercase">
-                      {companyName}
-                    </h1>
-                    <p className="text-[10px] text-slate-500 font-medium">Sultanate of Oman • Finance & Accounts</p>
-                  </div>
+      {/* WhatsApp Custom Phone Modal (Fallback when vendor has no phone on profile) */}
+      {isPhoneModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div 
+            className="w-full max-w-sm bg-white rounded-xl shadow-2xl border border-slate-200 p-5 space-y-4 animate-in fade-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+                  <Share2 className="h-4 w-4" />
                 </div>
-                {(companyCr || companyTax) && (
-                  <div className="text-[10px] font-mono text-slate-500 pt-1">
-                    {companyCr && <span>CR No: <strong>{companyCr}</strong></span>}
-                    {companyCr && companyTax && <span className="mx-2">•</span>}
-                    {companyTax && <span>VAT No: <strong>{companyTax}</strong></span>}
-                  </div>
-                )}
-              </div>
-
-              <div className="text-right shrink-0">
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold tracking-wider uppercase">
-                  <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                  Payment Confirmed
-                </span>
-                <p className="text-[11px] font-mono font-semibold text-slate-700 mt-1.5">{voucherNumber}</p>
-                <p className="text-[10px] text-slate-400">{formattedDate}</p>
-              </div>
-            </div>
-
-            {/* Beneficiary & Remittance Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
-              {/* Beneficiary */}
-              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Beneficiary / Paid To
-                </span>
-                <p className="text-sm font-bold text-slate-900 leading-snug">{vendor.name}</p>
-                {vendor.contact_person && (
-                  <p className="text-[11px] text-slate-600">Attn: {vendor.contact_person}</p>
-                )}
-                <div className="space-y-0.5 text-[11px] text-slate-500 pt-0.5">
-                  {vendor.phone && (
-                    <p className="flex items-center gap-1.5">
-                      <Phone className="h-3 w-3 text-slate-400" />
-                      {vendor.phone}
-                    </p>
-                  )}
-                  {vendor.email && (
-                    <p className="flex items-center gap-1.5">
-                      <Mail className="h-3 w-3 text-slate-400" />
-                      {vendor.email}
-                    </p>
-                  )}
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">Send Payment Advice via WhatsApp</h3>
+                  <p className="text-[10px] text-slate-500">{vendor.name}</p>
                 </div>
               </div>
-
-              {/* Remittance / Account Credited */}
-              <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Remittance / Account Credited
-                </span>
-                <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Landmark className="h-3.5 w-3.5 text-slate-500" />
-                  {vendor.bank_name || 'Bank Muscat / Commercial Bank'}
-                </p>
-                <p className="font-mono text-xs text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 inline-block font-semibold">
-                  {payment.bank_account || vendor.bank_account || vendor.account_no || 'Standard Bank Account'}
-                </p>
-                {vendor.swift_code && (
-                  <p className="text-[10px] font-mono text-slate-500">
-                    SWIFT: <strong>{vendor.swift_code}</strong>
-                  </p>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsPhoneModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
-            {/* Payment Amount Display Card */}
-            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border border-emerald-200/80 flex items-center justify-between">
+            <form onSubmit={handleSendCustomPhoneWhatsApp} className="space-y-3">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">
-                  Total Amount Transferred
-                </span>
-                <p className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-700 mt-0.5">
-                  {formatOMR(payment.amount)}
-                </p>
-                <span className="text-[10px] font-semibold text-emerald-600 block mt-0.5">
-                  Omani Rials • Settled in Full
-                </span>
-              </div>
-              <div className="p-2.5 rounded-full bg-emerald-100 text-emerald-700 shadow-2xs">
-                <ShieldCheck className="h-6 w-6" />
-              </div>
-            </div>
-
-            {/* Transaction Particulars Table (Clean Corporate Table - No Zoho Details) */}
-            <div className="space-y-2">
-              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Transaction Particulars
-              </h3>
-              <div className="overflow-hidden rounded-xl border border-slate-200 text-xs">
-                <table className="w-full text-left">
-                  <tbody className="divide-y divide-slate-100">
-                    <tr className="bg-slate-50/50">
-                      <td className="py-2.5 px-3 text-slate-500 font-semibold w-1/3">Payment Date</td>
-                      <td className="py-2.5 px-3 font-semibold text-slate-800">{formattedDate}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-3 text-slate-500 font-semibold">Voucher / Reference No</td>
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
-                        {payment.reference_no || voucherNumber}
-                      </td>
-                    </tr>
-                    {payable && (
-                      <tr className="bg-slate-50/50">
-                        <td className="py-2.5 px-3 text-slate-500 font-semibold">Applied Bill / Description</td>
-                        <td className="py-2.5 px-3 text-slate-800 font-medium">
-                          {payable.title}
-                        </td>
-                      </tr>
-                    )}
-                    <tr>
-                      <td className="py-2.5 px-3 text-slate-500 font-semibold">Payment Mode</td>
-                      <td className="py-2.5 px-3 text-slate-800">
-                        Direct Bank Transfer / Electronic Credit
-                      </td>
-                    </tr>
-                    {displayNotes && (
-                      <tr className="bg-slate-50/50">
-                        <td className="py-2.5 px-3 text-slate-500 font-semibold">Remarks / Purpose</td>
-                        <td className="py-2.5 px-3 text-slate-700 italic">{displayNotes}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Official Signoff Strip */}
-            <div className="pt-6 border-t border-slate-200 flex items-end justify-between text-xs text-slate-400">
-              <div className="space-y-1">
-                <p className="text-[10px] text-slate-400 italic">
-                  This document serves as an official confirmation of payment.
-                </p>
-                <p className="text-[10px] font-mono text-slate-400">
-                  Verified by Accounts & Payables System • {format(new Date(), 'dd/MM/yyyy HH:mm')}
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Recipient WhatsApp Number
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  required
+                  placeholder="e.g. 96891234567 or 91234567"
+                  value={customPhone}
+                  onChange={(e) => setCustomPhone(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Oman numbers (+968) are automatically recognized.
                 </p>
               </div>
 
-              <div className="text-center">
-                <div className="h-10 border-b border-dashed border-slate-300 w-36 mb-1" />
-                <span className="text-[9px] uppercase tracking-wider font-semibold text-slate-500">
-                  Authorized Signatory
-                </span>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsPhoneModalOpen(false)}
+                  className="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100 text-xs font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <Share2 className="h-3 w-3" />
+                  <span>Send on WhatsApp</span>
+                </button>
               </div>
-            </div>
-
+            </form>
           </div>
         </div>
-
-        {/* Modal Bottom Footer */}
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0 print-hide">
-          <button
-            type="button"
-            onClick={handleCopySummary}
-            className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition font-medium cursor-pointer"
-          >
-            {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-            <span>{copiedLink ? 'Copied to Clipboard' : 'Copy Text Summary'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold transition shadow-xs cursor-pointer"
-          >
-            Close
-          </button>
-        </div>
-
-      </div>
-    </div>
+      )}
+    </>
   );
 }
