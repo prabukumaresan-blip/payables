@@ -10,14 +10,16 @@ import {
   Landmark, 
   Phone, 
   Mail, 
-  Share2,
-  Copy,
-  Check,
-  Loader2,
-  Printer,
-  ShieldCheck,
-  CheckCircle2,
-  MessageCircle
+  Share2, 
+  Copy, 
+  Check, 
+  Loader2, 
+  Printer, 
+  ShieldCheck, 
+  CheckCircle2, 
+  MessageCircle,
+  Paperclip,
+  ArrowRight
 } from 'lucide-react';
 import { Vendor, PaymentHistory, Payable, Company } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
@@ -44,6 +46,7 @@ export default function PaymentConfirmationModal({
   const [copiedLink, setCopiedLink] = useState(false);
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [customPhone, setCustomPhone] = useState(vendor.phone || '');
+  const [showWhatsAppNotice, setShowWhatsAppNotice] = useState(false);
 
   if (!isOpen || !payment) return null;
 
@@ -70,9 +73,6 @@ export default function PaymentConfirmationModal({
     ? `PAY-${payment.reference_no}` 
     : `PAY-${payment.id.slice(0, 8).toUpperCase()}`;
 
-  // Clean notes excluding internal [ZOHO_PAYMENT:...] tags
-  const displayNotes = payment.notes ? payment.notes.replace(/\[ZOHO_PAYMENT:[^\]]+\]/g, '').trim() : '';
-
   // Safe filename
   const getFilename = () => {
     const sanitizedVendor = vendor.name.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -85,228 +85,233 @@ export default function PaymentConfirmationModal({
     window.print();
   };
 
-  // Pure Vector Corporate PDF Generation (Instant, Crisp, Zero Freezing, No Signatory)
+  // Generate Corporate Vector PDF Document
+  const generatePDFDocument = () => {
+    const doc = new jsPDF({
+      orientation: 'p',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
+
+    const pageWidth = 210;
+    const margin = 18;
+    const contentWidth = pageWidth - (margin * 2);
+
+    // Corporate Brand Colors
+    const primaryColor: [number, number, number] = [15, 23, 42]; // Slate 900
+    const accentColor: [number, number, number] = [16, 185, 129]; // Emerald 500
+    const subtleColor: [number, number, number] = [100, 116, 139]; // Slate 500
+    const lightBg: [number, number, number] = [248, 250, 252]; // Slate 50
+    const borderColor: [number, number, number] = [226, 232, 240]; // Slate 200
+
+    // 1. Top Brand Line
+    doc.setFillColor(...accentColor);
+    doc.rect(0, 0, pageWidth, 4, 'F');
+
+    // 2. Company Header
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text(companyName.toUpperCase(), margin, 20);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...subtleColor);
+    doc.text('Sultanate of Oman • Finance & Corporate Accounts', margin, 26);
+    
+    const regDetails = [];
+    if (companyCr) regDetails.push(`Commercial Reg (CR): ${companyCr}`);
+    if (companyTax) regDetails.push(`VAT / Tax ID: ${companyTax}`);
+    if (regDetails.length > 0) {
+      doc.text(regDetails.join('   |   '), margin, 31);
+    }
+
+    // Top Right Document Badge
+    doc.setFillColor(236, 253, 245); // Emerald 50
+    doc.setDrawColor(167, 243, 208); // Emerald 200
+    doc.roundedRect(pageWidth - margin - 58, 12, 58, 22, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(6, 95, 70); // Emerald 800
+    doc.text('PAYMENT ADVICE', pageWidth - margin - 29, 18, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...subtleColor);
+    doc.text(`Ref: ${voucherNumber}`, pageWidth - margin - 29, 24, { align: 'center' });
+    doc.text(`Date: ${formattedDate}`, pageWidth - margin - 29, 29, { align: 'center' });
+
+    // Horizontal Divider
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.5);
+    doc.line(margin, 38, pageWidth - margin, 38);
+
+    // 3. Dual Information Panels (Beneficiary vs Remittance)
+    const colWidth = (contentWidth - 6) / 2;
+    const cardY = 44;
+    const cardHeight = 44;
+
+    // Left Panel: Beneficiary
+    doc.setFillColor(...lightBg);
+    doc.setDrawColor(...borderColor);
+    doc.roundedRect(margin, cardY, colWidth, cardHeight, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text('BENEFICIARY / PAID TO', margin + 6, cardY + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...primaryColor);
+    doc.text(vendor.name, margin + 6, cardY + 16, { maxWidth: colWidth - 12 });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...subtleColor);
+    let leftY = cardY + 23;
+    if (vendor.contact_person) {
+      doc.text(`Attn: ${vendor.contact_person}`, margin + 6, leftY);
+      leftY += 5;
+    }
+    if (vendor.phone) {
+      doc.text(`Phone: ${vendor.phone}`, margin + 6, leftY);
+      leftY += 5;
+    }
+    if (vendor.email) {
+      doc.text(`Email: ${vendor.email}`, margin + 6, leftY);
+    }
+
+    // Right Panel: Remittance Details
+    const rightColX = margin + colWidth + 6;
+    doc.setFillColor(...lightBg);
+    doc.setDrawColor(...borderColor);
+    doc.roundedRect(rightColX, cardY, colWidth, cardHeight, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text('REMITTANCE / CREDITED ACCOUNT', rightColX + 6, cardY + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...primaryColor);
+    doc.text(vendor.bank_name || 'Bank Muscat / Commercial Bank', rightColX + 6, cardY + 16);
+
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    const acc = payment.bank_account || vendor.bank_account || vendor.account_no || 'Standard Bank Transfer';
+    doc.text(`Acc: ${acc}`, rightColX + 6, cardY + 24);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...subtleColor);
+    if (vendor.swift_code) {
+      doc.text(`SWIFT / BIC: ${vendor.swift_code}`, rightColX + 6, cardY + 31);
+    }
+    doc.text('Payment Channel: Electronic Funds Transfer', rightColX + 6, cardY + 37);
+
+    // 4. Highlighted Amount Banner
+    const amountBannerY = 94;
+    doc.setFillColor(236, 253, 245); // Emerald 50
+    doc.setDrawColor(167, 243, 208); // Emerald 200
+    doc.roundedRect(margin, amountBannerY, contentWidth, 24, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(6, 95, 70);
+    doc.text('TOTAL AMOUNT TRANSFERRED', margin + 8, amountBannerY + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(4, 120, 87); // Emerald 700
+    doc.text(formatOMR(payment.amount), margin + 8, amountBannerY + 18);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(6, 95, 70);
+    doc.text('STATUS: SETTLED IN FULL', pageWidth - margin - 8, amountBannerY + 14, { align: 'right' });
+
+    // 5. Transaction Particulars Table (Clean Corporate Table - No Zoho Details, No Remarks)
+    const tableY = 126;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...primaryColor);
+    doc.text('TRANSACTION PARTICULARS', margin, tableY);
+
+    let currentY = tableY + 4;
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.3);
+
+    const tableRows: [string, string][] = [
+      ['Payment Date', formattedDate],
+      ['Voucher / Reference No', payment.reference_no || voucherNumber],
+      ['Applied Bill / Description', payable?.title || 'Vendor Payment Settlement'],
+      ['Payment Mode', 'Direct Bank Transfer / Electronic Credit'],
+    ];
+
+    tableRows.forEach(([label, value], idx) => {
+      const rowHeight = 10;
+      const isEven = idx % 2 === 0;
+
+      // Background
+      doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+      doc.rect(margin, currentY, contentWidth, rowHeight, 'FD');
+
+      // Label Column
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(label, margin + 6, currentY + 6.5);
+
+      // Value Column
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(value, margin + 65, currentY + 6.5, { maxWidth: contentWidth - 70 });
+
+      currentY += rowHeight;
+    });
+
+    // 6. Corporate Verification (Without Authorized Signatory)
+    const signoffY = Math.max(currentY + 24, 215);
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(...borderColor);
+    doc.roundedRect(margin, signoffY, contentWidth, 20, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(30, 41, 59);
+    doc.text('ELECTRONIC PAYMENT VERIFICATION', margin + 6, signoffY + 7);
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text('This document is electronically generated and authenticated by Accounts & Payables System.', margin + 6, signoffY + 12);
+    doc.text(`Generated on ${format(new Date(), 'dd/MM/yyyy HH:mm')} • Official record of remittance`, margin + 6, signoffY + 16);
+
+    // Bottom footer rule
+    doc.setDrawColor(...borderColor);
+    doc.line(margin, 280, pageWidth - margin, 280);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Confidential • Internal & Vendor Remittance Documentation', margin, 284);
+    doc.text('Page 1 of 1', pageWidth - margin, 284, { align: 'right' });
+
+    return doc;
+  };
+
+  // Pure Vector Corporate PDF Download
   const handleDownloadPDF = () => {
     setDownloadingPdf(true);
     try {
-      const doc = new jsPDF({
-        orientation: 'p',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
-
-      const pageWidth = 210;
-      const margin = 18;
-      const contentWidth = pageWidth - (margin * 2);
-
-      // Corporate Brand Colors
-      const primaryColor: [number, number, number] = [15, 23, 42]; // Slate 900
-      const accentColor: [number, number, number] = [16, 185, 129]; // Emerald 500
-      const subtleColor: [number, number, number] = [100, 116, 139]; // Slate 500
-      const lightBg: [number, number, number] = [248, 250, 252]; // Slate 50
-      const borderColor: [number, number, number] = [226, 232, 240]; // Slate 200
-
-      // 1. Top Brand Line
-      doc.setFillColor(...accentColor);
-      doc.rect(0, 0, pageWidth, 4, 'F');
-
-      // 2. Company Header
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.setTextColor(...primaryColor);
-      doc.text(companyName.toUpperCase(), margin, 20);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
-      doc.setTextColor(...subtleColor);
-      doc.text('Sultanate of Oman • Finance & Corporate Accounts', margin, 26);
-      
-      const regDetails = [];
-      if (companyCr) regDetails.push(`Commercial Reg (CR): ${companyCr}`);
-      if (companyTax) regDetails.push(`VAT / Tax ID: ${companyTax}`);
-      if (regDetails.length > 0) {
-        doc.text(regDetails.join('   |   '), margin, 31);
-      }
-
-      // Top Right Document Badge
-      doc.setFillColor(236, 253, 245); // Emerald 50
-      doc.setDrawColor(167, 243, 208); // Emerald 200
-      doc.roundedRect(pageWidth - margin - 58, 12, 58, 22, 2, 2, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(6, 95, 70); // Emerald 800
-      doc.text('PAYMENT ADVICE', pageWidth - margin - 29, 18, { align: 'center' });
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(...subtleColor);
-      doc.text(`Ref: ${voucherNumber}`, pageWidth - margin - 29, 24, { align: 'center' });
-      doc.text(`Date: ${formattedDate}`, pageWidth - margin - 29, 29, { align: 'center' });
-
-      // Horizontal Divider
-      doc.setDrawColor(...borderColor);
-      doc.setLineWidth(0.5);
-      doc.line(margin, 38, pageWidth - margin, 38);
-
-      // 3. Dual Information Panels (Beneficiary vs Remittance)
-      const colWidth = (contentWidth - 6) / 2;
-      const cardY = 44;
-      const cardHeight = 44;
-
-      // Left Panel: Beneficiary
-      doc.setFillColor(...lightBg);
-      doc.setDrawColor(...borderColor);
-      doc.roundedRect(margin, cardY, colWidth, cardHeight, 2, 2, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text('BENEFICIARY / PAID TO', margin + 6, cardY + 8);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(...primaryColor);
-      doc.text(vendor.name, margin + 6, cardY + 16, { maxWidth: colWidth - 12 });
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...subtleColor);
-      let leftY = cardY + 23;
-      if (vendor.contact_person) {
-        doc.text(`Attn: ${vendor.contact_person}`, margin + 6, leftY);
-        leftY += 5;
-      }
-      if (vendor.phone) {
-        doc.text(`Phone: ${vendor.phone}`, margin + 6, leftY);
-        leftY += 5;
-      }
-      if (vendor.email) {
-        doc.text(`Email: ${vendor.email}`, margin + 6, leftY);
-      }
-
-      // Right Panel: Remittance Details
-      const rightColX = margin + colWidth + 6;
-      doc.setFillColor(...lightBg);
-      doc.setDrawColor(...borderColor);
-      doc.roundedRect(rightColX, cardY, colWidth, cardHeight, 2, 2, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text('REMITTANCE / CREDITED ACCOUNT', rightColX + 6, cardY + 8);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(...primaryColor);
-      doc.text(vendor.bank_name || 'Bank Muscat / Commercial Bank', rightColX + 6, cardY + 16);
-
-      doc.setFont('courier', 'bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(15, 23, 42);
-      const acc = payment.bank_account || vendor.bank_account || vendor.account_no || 'Standard Bank Transfer';
-      doc.text(`Acc: ${acc}`, rightColX + 6, cardY + 24);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...subtleColor);
-      if (vendor.swift_code) {
-        doc.text(`SWIFT / BIC: ${vendor.swift_code}`, rightColX + 6, cardY + 31);
-      }
-      doc.text('Payment Channel: Electronic Funds Transfer', rightColX + 6, cardY + 37);
-
-      // 4. Highlighted Amount Banner
-      const amountBannerY = 94;
-      doc.setFillColor(236, 253, 245); // Emerald 50
-      doc.setDrawColor(167, 243, 208); // Emerald 200
-      doc.roundedRect(margin, amountBannerY, contentWidth, 24, 2, 2, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(6, 95, 70);
-      doc.text('TOTAL AMOUNT TRANSFERRED', margin + 8, amountBannerY + 8);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(18);
-      doc.setTextColor(4, 120, 87); // Emerald 700
-      doc.text(formatOMR(payment.amount), margin + 8, amountBannerY + 18);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(6, 95, 70);
-      doc.text('STATUS: SETTLED IN FULL', pageWidth - margin - 8, amountBannerY + 14, { align: 'right' });
-
-      // 5. Transaction Particulars Table (Clean Corporate Table - No Zoho Details)
-      const tableY = 126;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(...primaryColor);
-      doc.text('TRANSACTION PARTICULARS', margin, tableY);
-
-      let currentY = tableY + 4;
-      doc.setDrawColor(...borderColor);
-      doc.setLineWidth(0.3);
-
-      const tableRows: [string, string][] = [
-        ['Payment Date', formattedDate],
-        ['Voucher / Reference No', payment.reference_no || voucherNumber],
-        ['Applied Bill / Description', payable?.title || 'Vendor Payment Settlement'],
-        ['Payment Mode', 'Direct Bank Transfer / Electronic Credit'],
-      ];
-
-      tableRows.forEach(([label, value], idx) => {
-        const rowHeight = 10;
-        const isEven = idx % 2 === 0;
-
-        // Background
-        doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
-        doc.rect(margin, currentY, contentWidth, rowHeight, 'FD');
-
-        // Label Column
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(71, 85, 105);
-        doc.text(label, margin + 6, currentY + 6.5);
-
-        // Value Column
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.setTextColor(15, 23, 42);
-        doc.text(value, margin + 65, currentY + 6.5, { maxWidth: contentWidth - 70 });
-
-        currentY += rowHeight;
-      });
-
-      // 6. Corporate Verification (Without Authorized Signatory)
-      const signoffY = Math.max(currentY + 24, 215);
-
-      doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(...borderColor);
-      doc.roundedRect(margin, signoffY, contentWidth, 20, 2, 2, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(30, 41, 59);
-      doc.text('ELECTRONIC PAYMENT VERIFICATION', margin + 6, signoffY + 7);
-
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(7.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text('This document is electronically generated and authenticated by Accounts & Payables System.', margin + 6, signoffY + 12);
-      doc.text(`Generated on ${format(new Date(), 'dd/MM/yyyy HH:mm')} • Official record of remittance`, margin + 6, signoffY + 16);
-
-      // Bottom footer rule
-      doc.setDrawColor(...borderColor);
-      doc.line(margin, 280, pageWidth - margin, 280);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(148, 163, 184);
-      doc.text('Confidential • Internal & Vendor Remittance Documentation', margin, 284);
-      doc.text('Page 1 of 1', pageWidth - margin, 284, { align: 'right' });
-
-      // Save PDF
+      const doc = generatePDFDocument();
       doc.save(getFilename());
     } catch (err) {
       console.error('Failed to generate vector PDF, using print fallback:', err);
@@ -316,8 +321,39 @@ export default function PaymentConfirmationModal({
     }
   };
 
-  // Launch WhatsApp with target phone
-  const triggerWhatsAppWithPhone = (phoneNum?: string | null) => {
+  // Launch WhatsApp with target phone + automatically download the PDF advice to attach
+  const triggerWhatsAppWithPhoneAndPDF = async (phoneNum?: string | null) => {
+    const filename = getFilename();
+
+    // 1. Try Web Share API (mobile/desktop supported browsers can share PDF directly)
+    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+      try {
+        const doc = generatePDFDocument();
+        const pdfBlob = doc.output('blob');
+        const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+
+        if (navigator.canShare({ files: [pdfFile] })) {
+          await navigator.share({
+            title: `Payment Confirmation Advice - ${vendor.name}`,
+            text: `Payment Confirmation Advice for ${vendor.name} (${formatOMR(payment.amount)})`,
+            files: [pdfFile]
+          });
+          return;
+        }
+      } catch (err) {
+        // Fallback to standard WhatsApp url + automated download
+      }
+    }
+
+    // 2. Automated Download of PDF so user can attach it immediately in the opened chat
+    try {
+      const doc = generatePDFDocument();
+      doc.save(filename);
+    } catch (e) {
+      console.warn('PDF auto-download error:', e);
+    }
+
+    // 3. Open WhatsApp chat with remittance breakdown & attachment instructions
     openWhatsApp({
       vendorName: vendor.name,
       phoneNumber: phoneNum,
@@ -328,13 +364,16 @@ export default function PaymentConfirmationModal({
       companyName: companyName,
       title: payable?.title
     });
+
+    // 4. Show friendly in-app notification explaining how to attach the downloaded PDF
+    setShowWhatsAppNotice(true);
   };
 
   // Handle WhatsApp button click:
   // If vendor has phone, dispatch directly; otherwise show quick phone input dialog
   const handleWhatsAppClick = () => {
     if (vendor.phone && vendor.phone.trim()) {
-      triggerWhatsAppWithPhone(vendor.phone);
+      triggerWhatsAppWithPhoneAndPDF(vendor.phone);
     } else {
       setIsPhoneModalOpen(true);
     }
@@ -342,7 +381,7 @@ export default function PaymentConfirmationModal({
 
   const handleSendCustomPhoneWhatsApp = (e: React.FormEvent) => {
     e.preventDefault();
-    triggerWhatsAppWithPhone(customPhone);
+    triggerWhatsAppWithPhoneAndPDF(customPhone);
     setIsPhoneModalOpen(false);
   };
 
@@ -385,7 +424,7 @@ export default function PaymentConfirmationModal({
                 type="button"
                 onClick={handleWhatsAppClick}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                title="Send Payment Advice to Vendor via WhatsApp"
+                title="Send Payment Advice & Download PDF to attach in WhatsApp"
               >
                 <Share2 className="h-3.5 w-3.5" />
                 <span>WhatsApp</span>
@@ -431,6 +470,25 @@ export default function PaymentConfirmationModal({
               </button>
             </div>
           </div>
+
+          {/* WhatsApp PDF Attachment Guide Toast Notification */}
+          {showWhatsAppNotice && (
+            <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-2.5 flex items-center justify-between text-xs text-emerald-950 animate-in slide-in-from-top-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>PDF Downloaded:</strong> In the opened WhatsApp chat, click the attachment paperclip icon and select <strong>{getFilename()}</strong> from your Downloads folder.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppNotice(false)}
+                className="text-emerald-700 hover:text-emerald-900 font-bold ml-2 p-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* Scrollable Printable Confirmation Document (Corporate Styled View) */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70 flex justify-center">
@@ -534,7 +592,7 @@ export default function PaymentConfirmationModal({
                 </div>
               </div>
 
-              {/* Transaction Particulars Table (Clean Corporate Table - No Zoho Details) */}
+              {/* Transaction Particulars Table (Clean Corporate Table - No Zoho Details, No Remarks) */}
               <div className="space-y-2">
                 <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Transaction Particulars
@@ -607,7 +665,7 @@ export default function PaymentConfirmationModal({
                 className="inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer"
               >
                 <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Share WhatsApp</span>
+                <span>Share WhatsApp & Attach PDF</span>
               </button>
             </div>
 
@@ -681,7 +739,7 @@ export default function PaymentConfirmationModal({
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs cursor-pointer"
                 >
                   <Share2 className="h-3 w-3" />
-                  <span>Send on WhatsApp</span>
+                  <span>Send & Attach PDF</span>
                 </button>
               </div>
             </form>
