@@ -39,9 +39,11 @@ import {
   Mail,
   Send,
   Layers,
-  Check
+  Check,
+  Download
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import PaymentConfirmationModal from './PaymentConfirmationModal';
 
 interface VendorTransactionsModalProps {
   isOpen: boolean;
@@ -84,6 +86,12 @@ export default function VendorTransactionsModal({
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [paymentSuccessMsg, setPaymentSuccessMsg] = useState<string | null>(null);
+
+  // Payment Confirmation Advice Modal state
+  const [confirmationModalData, setConfirmationModalData] = useState<{
+    payment: PaymentHistory;
+    payable?: Payable | null;
+  } | null>(null);
 
   // Filter bills belonging to this vendor
   const vendorBills = allPayables.filter(p => {
@@ -666,13 +674,28 @@ export default function VendorTransactionsModal({
                         )}
 
                         {!isBill && item.rawPayment && (
-                          <button
-                            onClick={() => handleDeletePayment(item.rawPayment!)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                            title="Delete Payment Record"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => {
+                                setConfirmationModalData({
+                                  payment: item.rawPayment!,
+                                  payable: item.rawPayable || null
+                                });
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-colors flex items-center gap-1.5"
+                              title="Download or preview payment confirmation advice"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              <span>Confirmation</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeletePayment(item.rawPayment!)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                              title="Delete Payment Record"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -914,6 +937,18 @@ export default function VendorTransactionsModal({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Payment Confirmation Advice Modal */}
+      {confirmationModalData && (
+        <PaymentConfirmationModal
+          isOpen={!!confirmationModalData}
+          onClose={() => setConfirmationModalData(null)}
+          vendor={vendor}
+          payment={confirmationModalData.payment}
+          payable={confirmationModalData.payable}
+          company={confirmationModalData.payable?.company || null}
+        />
       )}
 
     </div>

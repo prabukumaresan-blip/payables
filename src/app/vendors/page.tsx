@@ -13,6 +13,7 @@ import {
 } from '@/lib/supabase/queries';
 import { Vendor, Payable, Category } from '@/lib/supabase/mockDb';
 import VendorTransactionsModal from '@/components/vendors/VendorTransactionsModal';
+import VendorPaymentConfirmationSelectorModal from '@/components/vendors/VendorPaymentConfirmationSelectorModal';
 import { cn } from '@/lib/utils';
 import { 
   Building2, 
@@ -32,6 +33,7 @@ import {
   Upload,
   Download,
   FileText,
+  FileCheck2,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
@@ -54,6 +56,10 @@ function VendorsContent() {
   // Transactions Modal State
   const [selectedVendorForTransactions, setSelectedVendorForTransactions] = useState<Vendor | null>(null);
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
+
+  // Payment Confirmation Modal State
+  const [selectedVendorForConfirmation, setSelectedVendorForConfirmation] = useState<Vendor | null>(null);
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
 
   // Zoho Sync State
   const [zohoSyncing, setZohoSyncing] = useState(false);
@@ -863,6 +869,16 @@ function VendorsContent() {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => {
+                              setSelectedVendorForConfirmation(vendor);
+                              setIsConfirmationModalOpen(true);
+                            }}
+                            className="rounded p-1.5 text-emerald-600 hover:bg-emerald-50 transition-colors"
+                            title="Download Payment Confirmation Advice"
+                          >
+                            <FileCheck2 className="h-4.5 w-4.5" />
+                          </button>
+                          <button
+                            onClick={() => {
                               setSelectedVendorForTransactions(vendor);
                               setIsTransactionsModalOpen(true);
                             }}
@@ -1635,6 +1651,19 @@ function VendorsContent() {
             onDataRefresh={async () => {
               await loadData();
             }}
+          />
+        )}
+
+        {/* Vendor Payment Confirmation Selector Modal */}
+        {selectedVendorForConfirmation && (
+          <VendorPaymentConfirmationSelectorModal
+            isOpen={isConfirmationModalOpen}
+            onClose={() => {
+              setIsConfirmationModalOpen(false);
+              setSelectedVendorForConfirmation(null);
+            }}
+            vendor={selectedVendorForConfirmation}
+            allPayables={payables}
           />
         )}
 
