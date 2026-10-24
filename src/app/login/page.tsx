@@ -60,8 +60,12 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-md sm:p-10">
         {/* App Logo & Header */}
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 shadow-lg shadow-indigo-500/20">
-            <Building2 className="h-6 w-6 text-white" />
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-white border border-slate-200/90 p-2 shadow-sm">
+            <img
+              src="/bright-flowers-logo.png"
+              alt="Bright Flowers"
+              className="h-full w-full object-contain"
+            />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
             Monthly Payables

@@ -34,6 +34,7 @@ export const SEEDED_COMPANIES: Company[] = [
     subtitle: 'Trading LLC',
     tax_number: 'OM1100234567',
     cr_number: '1249823',
+    logo_url: '/bright-flowers-logo.png',
     color: 'indigo',
     zoho_organization_id: '771750431',
     is_active: true,

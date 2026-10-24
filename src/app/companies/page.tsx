@@ -357,8 +357,18 @@ function CompaniesContent() {
                 {/* Company Header */}
                 <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/40">
                   <div className="flex items-start sm:items-center gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white font-bold text-lg shadow-md shadow-indigo-500/20">
-                      {company.short_name ? company.short_name.substring(0, 2).toUpperCase() : 'CO'}
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200/90 p-1.5 shadow-sm overflow-hidden">
+                      {company.logo_url ? (
+                        <img
+                          src={company.logo_url}
+                          alt={company.name}
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 text-white font-bold text-sm">
+                          {company.short_name ? company.short_name.substring(0, 2).toUpperCase() : 'CO'}
+                        </div>
+                      )}
                     </div>
 
                     <div>

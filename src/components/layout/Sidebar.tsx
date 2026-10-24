@@ -106,8 +106,12 @@ export default function Sidebar({ className, isOpen, onClose }: SidebarProps) {
         {/* Brand Header */}
         <div className="flex h-16 items-center justify-between px-5 border-b border-slate-150/90 bg-slate-50/40">
           <Link href="/companies" className="flex items-center gap-3 group transition-transform">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 shadow-sm border border-slate-800 text-white group-hover:bg-indigo-650 transition-colors">
-              <Building2 className="h-4.5 w-4.5 text-emerald-400 group-hover:text-white transition-colors" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200/80 p-1 shadow-2xs group-hover:scale-105 group-hover:border-slate-300 transition-all">
+              <img
+                src="/bright-flowers-logo.png"
+                alt="Bright Flowers Logo"
+                className="h-full w-full object-contain"
+              />
             </div>
             <div className="truncate">
               <h2 className="text-xs font-bold tracking-tight text-slate-900 leading-tight uppercase font-sans truncate">

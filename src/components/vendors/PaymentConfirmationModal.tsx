@@ -427,15 +427,19 @@ export default function PaymentConfirmationModal({
               {/* Advice Header */}
               <div className="flex items-start justify-between border-b border-slate-200/80 pb-5 gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shadow-xs">
-                      {companyName.slice(0, 1)}
+                  <div className="flex items-center gap-3">
+                    <div className="h-11 w-11 rounded-xl bg-white border border-slate-200/90 p-1 flex items-center justify-center shadow-2xs shrink-0 overflow-hidden">
+                      <img
+                        src="/bright-flowers-logo.png"
+                        alt={companyName}
+                        className="h-full w-full object-contain"
+                      />
                     </div>
                     <div>
                       <h1 className="text-sm font-extrabold tracking-tight text-slate-900 uppercase">
                         {companyName}
                       </h1>
-                      <p className="text-[10px] text-slate-500 font-medium">Sultanate of Oman • Finance & Accounts</p>
+                      <p className="text-[10px] text-slate-500 font-medium">Sultanate of Oman • Finance & Corporate Accounts</p>
                     </div>
                   </div>
                   {(companyCr || companyTax) && (
