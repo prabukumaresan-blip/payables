@@ -14,7 +14,6 @@ import {
   Copy, 
   Check, 
   Loader2, 
-  Printer, 
   ShieldCheck, 
   CheckCircle2, 
   MessageCircle,
@@ -77,11 +76,6 @@ export default function PaymentConfirmationModal({
     const sanitizedVendor = vendor.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     const ref = payment.reference_no ? payment.reference_no.replace(/[^a-zA-Z0-9_-]/g, '_') : payment.id.slice(0, 6);
     return `Payment_Advice_${sanitizedVendor}_${ref}.pdf`;
-  };
-
-  // Browser Print / Save as PDF
-  const handlePrint = () => {
-    window.print();
   };
 
   // Generate Corporate Vector PDF Document
@@ -393,16 +387,6 @@ export default function PaymentConfirmationModal({
                 >
                   <Share2 className="h-3.5 w-3.5" />
                   <span>WhatsApp</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handlePrint}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition cursor-pointer"
-                  title="Print document or Save via system dialog"
-                >
-                  <Printer className="h-3.5 w-3.5 text-indigo-300" />
-                  <span className="hidden sm:inline">Print</span>
                 </button>
 
                 <button
