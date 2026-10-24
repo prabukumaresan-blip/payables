@@ -325,27 +325,29 @@ export default function PaymentConfirmationModal({
   const triggerWhatsAppWithPhoneAndPDF = async (phoneNum?: string | null) => {
     const filename = getFilename();
 
-    // 1. Try Web Share API (mobile/desktop supported browsers can share PDF directly)
-    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+    // 1. Try Web Share API with files (Supported on mobile browsers and Safari/Chrome with native share sheet)
+    // If supported, this passes the PDF directly into WhatsApp without manual file picking!
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         const doc = generatePDFDocument();
         const pdfBlob = doc.output('blob');
         const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
-        if (navigator.canShare({ files: [pdfFile] })) {
+        if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
           await navigator.share({
-            title: `Payment Confirmation Advice - ${vendor.name}`,
+            title: `Payment Advice - ${vendor.name}`,
             text: `Payment Confirmation Advice for ${vendor.name} (${formatOMR(payment.amount)})`,
             files: [pdfFile]
           });
           return;
         }
-      } catch (err) {
-        // Fallback to standard WhatsApp url + automated download
+      } catch (err: any) {
+        // User cancelled or aborted native share sheet, or format unsupported
+        if (err?.name === 'AbortError') return;
       }
     }
 
-    // 2. Automated Download of PDF so user can attach it immediately in the opened chat
+    // 2. On Desktop browsers: Auto-download the PDF advice immediately
     try {
       const doc = generatePDFDocument();
       doc.save(filename);
@@ -353,7 +355,7 @@ export default function PaymentConfirmationModal({
       console.warn('PDF auto-download error:', e);
     }
 
-    // 3. Open WhatsApp chat with remittance breakdown & attachment instructions
+    // 3. Open WhatsApp chat with full payment remittance particulars pre-filled
     openWhatsApp({
       vendorName: vendor.name,
       phoneNumber: phoneNum,
@@ -365,7 +367,7 @@ export default function PaymentConfirmationModal({
       title: payable?.title
     });
 
-    // 4. Show friendly in-app notification explaining how to attach the downloaded PDF
+    // 4. Show prominent banner explaining that the PDF has been downloaded to Downloads
     setShowWhatsAppNotice(true);
   };
 
