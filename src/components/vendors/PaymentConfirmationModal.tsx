@@ -19,7 +19,8 @@ import {
   Copy,
   Check,
   Loader2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Printer
 } from 'lucide-react';
 import { Vendor, PaymentHistory, Payable, Company } from '@/lib/supabase/mockDb';
 import { formatOMR } from '@/lib/utils/formatCurrency';
@@ -78,37 +79,72 @@ export default function PaymentConfirmationModal({
   // Clean notes excluding internal [ZOHO_PAYMENT:...] tags
   const displayNotes = payment.notes ? payment.notes.replace(/\[ZOHO_PAYMENT:[^\]]+\]/g, '').trim() : '';
 
-  // Download PDF
+  // Standard safe filename
+  const getFilename = (ext: string) => {
+    const sanitizedVendor = vendor.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ref = payment.reference_no ? payment.reference_no.replace(/[^a-zA-Z0-9_-]/g, '_') : payment.id.slice(0, 6);
+    return `Payment_Confirmation_${sanitizedVendor}_${ref}.${ext}`;
+  };
+
+  // Browser Print / Save as PDF Fallback (Instant & never freezes)
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // Download PDF using direct jsPDF layout first, with canvas fallback
   const handleDownloadPDF = async () => {
-    if (!receiptRef.current) return;
     setDownloadingPdf(true);
     try {
-      const element = receiptRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#FFFFFF',
-        logging: false
-      });
+      if (receiptRef.current) {
+        // Fast, high-res canvas render
+        const element = receiptRef.current;
+        const canvas = await html2canvas(element, {
+          scale: 1.5, // 1.5 scale prevents browser memory lockup/freezing while maintaining crisp quality
+          useCORS: true,
+          backgroundColor: '#FFFFFF',
+          logging: false
+        });
 
-      const imgWidth = 210; // A4 width in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
+        const imgWidth = 210; // A4 mm
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        const pdf = new jsPDF({
+          orientation: 'p',
+          unit: 'mm',
+          format: 'a4',
+          compress: true
+        });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
-      
-      const sanitizedVendor = vendor.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      pdf.save(`Payment_Confirmation_${sanitizedVendor}_${payment.reference_no || payment.id.slice(0, 6)}.pdf`);
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, Math.min(imgHeight, 297), undefined, 'FAST');
+        pdf.save(getFilename('pdf'));
+      } else {
+        // Direct jsPDF generation fallback if DOM element is detached
+        const pdf = new jsPDF();
+        pdf.setFontSize(18);
+        pdf.text(companyName, 20, 25);
+        pdf.setFontSize(12);
+        pdf.text(`CR No: ${companyCr}  VAT No: ${companyTax}`, 20, 32);
+        pdf.line(20, 35, 190, 35);
+
+        pdf.setFontSize(14);
+        pdf.text('PAYMENT CONFIRMATION ADVICE', 20, 45);
+        pdf.setFontSize(11);
+        pdf.text(`Voucher: ${voucherNumber}`, 20, 55);
+        pdf.text(`Date: ${formattedDate}`, 20, 62);
+        pdf.text(`Beneficiary: ${vendor.name}`, 20, 72);
+        pdf.text(`Bank / Account: ${payment.bank_account || vendor.bank_account || vendor.account_no || 'N/A'}`, 20, 79);
+        pdf.text(`Amount: ${formatOMR(payment.amount)}`, 20, 90);
+        pdf.text(`Reference No: ${payment.reference_no || 'N/A'}`, 20, 97);
+        if (displayNotes) {
+          pdf.text(`Notes: ${displayNotes}`, 20, 107);
+        }
+        pdf.save(getFilename('pdf'));
+      }
     } catch (err) {
-      console.error('Failed to generate PDF:', err);
-      alert('Could not generate PDF. Please try again.');
+      console.error('Failed to generate PDF canvas, launching print dialog fallback:', err);
+      // If canvas generation fails or is blocked, trigger browser print to save as PDF
+      window.print();
     } finally {
       setDownloadingPdf(false);
     }
@@ -121,7 +157,7 @@ export default function PaymentConfirmationModal({
     try {
       const element = receiptRef.current;
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 1.5,
         useCORS: true,
         backgroundColor: '#FFFFFF',
         logging: false
@@ -129,15 +165,18 @@ export default function PaymentConfirmationModal({
 
       const imgData = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      const sanitizedVendor = vendor.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      link.download = `Payment_Confirmation_${sanitizedVendor}_${payment.reference_no || payment.id.slice(0, 6)}.png`;
+      link.download = getFilename('png');
       link.href = imgData;
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      setTimeout(() => {
+        try {
+          document.body.removeChild(link);
+        } catch {}
+      }, 150);
     } catch (err) {
       console.error('Failed to generate image:', err);
-      alert('Could not download image. Please try again.');
+      alert('Could not generate image. You can use "Print / Save PDF" as a direct alternative.');
     } finally {
       setDownloadingImg(false);
     }
@@ -166,18 +205,21 @@ export default function PaymentConfirmationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
+      {/* Backdrop with explicit click handler */}
       <div 
-        className="fixed inset-0 bg-slate-900/75 backdrop-blur-sm transition-opacity" 
+        className="fixed inset-0 bg-slate-900/75 backdrop-blur-sm transition-opacity print-hide" 
         onClick={onClose} 
       />
 
       {/* Modal Container */}
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
+      <div 
+        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Top Control Header */}
-        <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between border-b border-white/10 shrink-0">
+        <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between border-b border-white/10 shrink-0 print-hide">
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-emerald-400" />
             <div>
@@ -192,7 +234,7 @@ export default function PaymentConfirmationModal({
               <button
                 type="button"
                 onClick={handleSendWhatsApp}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition"
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
                 title="Send via WhatsApp"
               >
                 <Share2 className="h-3.5 w-3.5" />
@@ -202,9 +244,19 @@ export default function PaymentConfirmationModal({
 
             <button
               type="button"
+              onClick={handlePrint}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition cursor-pointer"
+              title="Print document or Save as PDF"
+            >
+              <Printer className="h-3.5 w-3.5 text-indigo-300" />
+              <span className="hidden sm:inline">Print</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleDownloadImage}
               disabled={downloadingImg}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-sm transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition disabled:opacity-50 cursor-pointer"
               title="Download Confirmation as PNG image"
             >
               {downloadingImg ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
@@ -215,13 +267,13 @@ export default function PaymentConfirmationModal({
               type="button"
               onClick={handleDownloadPDF}
               disabled={downloadingPdf}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition disabled:opacity-50 cursor-pointer"
               title="Download Official PDF Confirmation Advice"
             >
               {downloadingPdf ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Generating PDF...</span>
+                  <span>Generating...</span>
                 </>
               ) : (
                 <>
@@ -232,9 +284,10 @@ export default function PaymentConfirmationModal({
             </button>
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
-              title="Close"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+              title="Close window"
             >
               <X className="h-4 w-4" />
             </button>
@@ -245,7 +298,7 @@ export default function PaymentConfirmationModal({
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70 flex justify-center">
           <div 
             ref={receiptRef}
-            className="w-full max-w-xl bg-white rounded-xl border border-slate-200/90 shadow-md p-6 sm:p-8 space-y-6 text-slate-850"
+            className="printable-voucher w-full max-w-xl bg-white rounded-xl border border-slate-200/90 shadow-md p-6 sm:p-8 space-y-6 text-slate-800"
           >
             {/* Advice Header */}
             <div className="flex items-start justify-between border-b border-slate-100 pb-5 gap-4">
@@ -400,7 +453,7 @@ export default function PaymentConfirmationModal({
                 <p className="text-[10px] text-slate-400 italic">
                   This document serves as an electronic confirmation of payment.
                 </p>
-                <p className="text-[10px] font-mono text-slate-350">
+                <p className="text-[10px] font-mono text-slate-400">
                   Generated by Payables System • {format(new Date(), 'dd/MM/yyyy HH:mm')}
                 </p>
               </div>
@@ -417,11 +470,11 @@ export default function PaymentConfirmationModal({
         </div>
 
         {/* Modal Bottom Footer */}
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0 print-hide">
           <button
             type="button"
             onClick={handleCopySummary}
-            className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition font-medium"
+            className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition font-medium cursor-pointer"
           >
             {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
             <span>{copiedLink ? 'Copied to Clipboard' : 'Copy Text Summary'}</span>
@@ -430,7 +483,7 @@ export default function PaymentConfirmationModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold transition shadow-xs"
+            className="px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold transition shadow-xs cursor-pointer"
           >
             Close
           </button>
