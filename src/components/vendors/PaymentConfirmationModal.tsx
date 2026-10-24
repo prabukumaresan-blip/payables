@@ -46,7 +46,6 @@ export default function PaymentConfirmationModal({
   const [copiedLink, setCopiedLink] = useState(false);
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [customPhone, setCustomPhone] = useState(vendor.phone || '');
-  const [showWhatsAppNotice, setShowWhatsAppNotice] = useState(false);
 
   if (!isOpen || !payment) return null;
 
@@ -321,41 +320,8 @@ export default function PaymentConfirmationModal({
     }
   };
 
-  // Launch WhatsApp with target phone + automatically download the PDF advice to attach
-  const triggerWhatsAppWithPhoneAndPDF = async (phoneNum?: string | null) => {
-    const filename = getFilename();
-
-    // 1. Try Web Share API with files (Supported on mobile browsers and Safari/Chrome with native share sheet)
-    // If supported, this passes the PDF directly into WhatsApp without manual file picking!
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        const doc = generatePDFDocument();
-        const pdfBlob = doc.output('blob');
-        const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
-
-        if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-          await navigator.share({
-            title: `Payment Advice - ${vendor.name}`,
-            text: `Payment Confirmation Advice for ${vendor.name} (${formatOMR(payment.amount)})`,
-            files: [pdfFile]
-          });
-          return;
-        }
-      } catch (err: any) {
-        // User cancelled or aborted native share sheet, or format unsupported
-        if (err?.name === 'AbortError') return;
-      }
-    }
-
-    // 2. On Desktop browsers: Auto-download the PDF advice immediately
-    try {
-      const doc = generatePDFDocument();
-      doc.save(filename);
-    } catch (e) {
-      console.warn('PDF auto-download error:', e);
-    }
-
-    // 3. Open WhatsApp chat with full payment remittance particulars pre-filled
+  // Launch WhatsApp with target phone (clean text-only remittance breakdown)
+  const triggerWhatsAppWithPhone = (phoneNum?: string | null) => {
     openWhatsApp({
       vendorName: vendor.name,
       phoneNumber: phoneNum,
@@ -366,16 +332,13 @@ export default function PaymentConfirmationModal({
       companyName: companyName,
       title: payable?.title
     });
-
-    // 4. Show prominent banner explaining that the PDF has been downloaded to Downloads
-    setShowWhatsAppNotice(true);
   };
 
   // Handle WhatsApp button click:
   // If vendor has phone, dispatch directly; otherwise show quick phone input dialog
   const handleWhatsAppClick = () => {
     if (vendor.phone && vendor.phone.trim()) {
-      triggerWhatsAppWithPhoneAndPDF(vendor.phone);
+      triggerWhatsAppWithPhone(vendor.phone);
     } else {
       setIsPhoneModalOpen(true);
     }
@@ -383,7 +346,7 @@ export default function PaymentConfirmationModal({
 
   const handleSendCustomPhoneWhatsApp = (e: React.FormEvent) => {
     e.preventDefault();
-    triggerWhatsAppWithPhoneAndPDF(customPhone);
+    triggerWhatsAppWithPhone(customPhone);
     setIsPhoneModalOpen(false);
   };
 
@@ -420,77 +383,58 @@ export default function PaymentConfirmationModal({
               </div>
             </div>
 
-            {/* Quick Action Toolbar */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleWhatsAppClick}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                title="Send Payment Advice & Download PDF to attach in WhatsApp"
-              >
-                <Share2 className="h-3.5 w-3.5" />
-                <span>WhatsApp</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition cursor-pointer"
-                title="Print document or Save via system dialog"
-              >
-                <Printer className="h-3.5 w-3.5 text-indigo-300" />
-                <span className="hidden sm:inline">Print</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadPDF}
-                disabled={downloadingPdf}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-700/20 transition disabled:opacity-50 cursor-pointer"
-                title="Download High-Resolution Corporate PDF Advice"
-              >
-                {downloadingPdf ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Generating PDF...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Download PDF</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-                title="Close window"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* WhatsApp PDF Attachment Guide Toast Notification */}
-          {showWhatsAppNotice && (
-            <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-2.5 flex items-center justify-between text-xs text-emerald-950 animate-in slide-in-from-top-2 shrink-0">
+              {/* Quick Action Toolbar */}
               <div className="flex items-center gap-2">
-                <Paperclip className="h-4 w-4 text-emerald-600 shrink-0" />
-                <span>
-                  <strong>PDF Downloaded:</strong> In the opened WhatsApp chat, click the attachment paperclip icon and select <strong>{getFilename()}</strong> from your Downloads folder.
-                </span>
+                <button
+                  type="button"
+                  onClick={handleWhatsAppClick}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                  title="Send Payment Advice via WhatsApp"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  <span>WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shadow-xs transition cursor-pointer"
+                  title="Print document or Save via system dialog"
+                >
+                  <Printer className="h-3.5 w-3.5 text-indigo-300" />
+                  <span className="hidden sm:inline">Print</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPDF}
+                  disabled={downloadingPdf}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-700/20 transition disabled:opacity-50 cursor-pointer"
+                  title="Download High-Resolution Corporate PDF Advice"
+                >
+                  {downloadingPdf ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Generating PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-3.5 w-3.5" />
+                      <span>Download PDF</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                  title="Close window"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowWhatsAppNotice(false)}
-                className="text-emerald-700 hover:text-emerald-900 font-bold ml-2 p-1"
-              >
-                ✕
-              </button>
             </div>
-          )}
 
           {/* Scrollable Printable Confirmation Document (Corporate Styled View) */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70 flex justify-center">
