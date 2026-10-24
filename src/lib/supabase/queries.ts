@@ -1473,6 +1473,35 @@ export async function getPaymentHistory(payableId: string): Promise<PaymentHisto
     .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
 }
 
+export async function getAllPaymentHistory(): Promise<PaymentHistory[]> {
+  if (!shouldUseMock()) {
+    try {
+      const supabase = createBrowserSupabase();
+      const { data, error } = await supabase
+        .from('payment_history')
+        .select('*')
+        .order('payment_date', { ascending: false });
+      if (!error && data) {
+        return data.map((item: any) => {
+          let zohoPaymentId = item.zoho_payment_id || null;
+          if (!zohoPaymentId && item.notes) {
+            const match = item.notes.match(/\[ZOHO_PAYMENT:([a-zA-Z0-9_-]+)\]/);
+            if (match) zohoPaymentId = match[1];
+          }
+          return {
+            ...item,
+            zoho_payment_id: zohoPaymentId
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch payment history from Supabase, falling back to local:', err);
+    }
+  }
+  const db = getMockDb();
+  return (db.payment_history || []).sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+}
+
 /**
  * Helper to dispatch vendor payment creation to Zoho Books in background/online mode
  */

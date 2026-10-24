@@ -8,9 +8,11 @@ import {
   createVendor, 
   updateVendor, 
   deleteVendor, 
-  getAllPayables 
+  getAllPayables,
+  getCategories
 } from '@/lib/supabase/queries';
-import { Vendor, Payable } from '@/lib/supabase/mockDb';
+import { Vendor, Payable, Category } from '@/lib/supabase/mockDb';
+import VendorTransactionsModal from '@/components/vendors/VendorTransactionsModal';
 import { cn } from '@/lib/utils';
 import { 
   Building2, 
@@ -45,8 +47,13 @@ import { parseVendorImportFile, ParsedVendorRow } from '@/lib/utils/fileUtils';
 function VendorsContent() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Transactions Modal State
+  const [selectedVendorForTransactions, setSelectedVendorForTransactions] = useState<Vendor | null>(null);
+  const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
 
   // Zoho Sync State
   const [zohoSyncing, setZohoSyncing] = useState(false);
@@ -412,10 +419,14 @@ function VendorsContent() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const vList = await getVendors();
-      const pList = await getAllPayables();
+      const [vList, pList, cList] = await Promise.all([
+        getVendors(),
+        getAllPayables(),
+        getCategories()
+      ]);
       setVendors(vList);
       setPayables(pList);
+      setCategories(cList);
 
       // Check Zoho configuration status
       try {
@@ -766,10 +777,21 @@ function VendorsContent() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
                   {filteredVendors.map((vendor) => (
-                    <tr key={vendor.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-3.5 px-6 font-semibold text-slate-900 truncate max-w-[200px]" title={vendor.name}>
+                    <tr key={vendor.id} className="hover:bg-slate-50/50 transition-colors group">
+                      <td className="py-3.5 px-6 font-semibold text-slate-900 truncate max-w-[220px]" title={vendor.name}>
                         <div>
-                          {vendor.name}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedVendorForTransactions(vendor);
+                              setIsTransactionsModalOpen(true);
+                            }}
+                            className="text-left font-semibold text-slate-900 hover:text-indigo-600 transition-colors hover:underline flex items-center gap-1.5 group-hover:text-indigo-600 cursor-pointer"
+                            title="Click to view all transactions, bills & payments"
+                          >
+                            <span className="truncate">{vendor.name}</span>
+                            <FileText className="h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-500 shrink-0" />
+                          </button>
                           {vendor.zoho_contact_id && (
                             <span className="block text-[10px] text-blue-600 font-normal">
                               Zoho ID: {vendor.zoho_contact_id}
@@ -839,6 +861,16 @@ function VendorsContent() {
                       </td>
                       <td className="py-3.5 px-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedVendorForTransactions(vendor);
+                              setIsTransactionsModalOpen(true);
+                            }}
+                            className="rounded p-1.5 text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            title="View Transactions, Bills & Payments"
+                          >
+                            <FileText className="h-4.5 w-4.5" />
+                          </button>
                           <button
                             onClick={() => handleOpenMatchModal(vendor)}
                             className={cn(
@@ -1587,6 +1619,23 @@ function VendorsContent() {
 
             </div>
           </div>
+        )}
+
+        {/* Vendor Transactions Modal */}
+        {selectedVendorForTransactions && (
+          <VendorTransactionsModal
+            isOpen={isTransactionsModalOpen}
+            onClose={() => {
+              setIsTransactionsModalOpen(false);
+              setSelectedVendorForTransactions(null);
+            }}
+            vendor={selectedVendorForTransactions}
+            categories={categories}
+            allPayables={payables}
+            onDataRefresh={async () => {
+              await loadData();
+            }}
+          />
         )}
 
       </div>

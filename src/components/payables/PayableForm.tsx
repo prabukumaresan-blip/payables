@@ -50,11 +50,12 @@ type FormValues = zod.infer<typeof formSchema>;
 interface PayableFormProps {
   categories: Category[];
   payable?: Payable | null; // Pass if editing
+  defaultVendorName?: string;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export default function PayableForm({ categories, payable, onSuccess, onCancel }: PayableFormProps) {
+export default function PayableForm({ categories, payable, defaultVendorName, onSuccess, onCancel }: PayableFormProps) {
   const isEdit = !!payable;
   const { companies, selectedCompanyId } = useCompany();
 
@@ -73,7 +74,7 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
       company_id: activeCompanyDefault,
       title: '',
       category_id: categories[0]?.id || 'cat-1',
-      vendor_name: '',
+      vendor_name: payable?.vendor_name || defaultVendorName || '',
       amount: '',
       currency: 'OMR',
       due_date: new Date().toISOString().split('T')[0],
@@ -239,8 +240,10 @@ export default function PayableForm({ categories, payable, onSuccess, onCancel }
         setValue('rent_repeat_sequence', payable.rent_repeat_sequence || 'monthly');
         setValue('rent_due_day', payable.rent_due_day || 5);
       }
+    } else if (defaultVendorName) {
+      setValue('vendor_name', defaultVendorName);
     }
-  }, [payable, setValue, companies]);
+  }, [payable, defaultVendorName, setValue, companies]);
 
   const [formError, setFormError] = React.useState<string | null>(null);
 
