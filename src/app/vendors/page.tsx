@@ -44,9 +44,11 @@ import {
   Unlink
 } from 'lucide-react';
 import { parseVendorImportFile, ParsedVendorRow } from '@/lib/utils/fileUtils';
+import { useCompany } from '@/context/CompanyContext';
 
 
 function VendorsContent() {
+  const { companies, selectedCompanyId, selectedCompany } = useCompany();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -84,6 +86,7 @@ function VendorsContent() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form Fields
+  const [companyId, setCompanyId] = useState<string>('');
   const [name, setName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [email, setEmail] = useState('');
@@ -99,6 +102,7 @@ function VendorsContent() {
 
   // Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importCompanyId, setImportCompanyId] = useState<string>('');
   const [importFile, setImportFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedVendorRow[]>([]);
   const [rowActions, setRowActions] = useState<Record<number, 'import' | 'update' | 'skip'>>({});
@@ -203,6 +207,8 @@ function VendorsContent() {
           combinedBankAcc = bName || accNo || null;
         }
 
+        const targetCompanyId = importCompanyId || (selectedCompanyId !== 'ALL' ? selectedCompanyId : null);
+
         const vendorData = {
           name: row.name.trim(),
           contact_person: row.contact_person ? row.contact_person.trim() : null,
@@ -212,7 +218,8 @@ function VendorsContent() {
           account_no: accNo || null,
           swift_code: row.swift_code ? row.swift_code.trim() : null,
           bank_type: row.bank_type,
-          bank_account: combinedBankAcc
+          bank_account: combinedBankAcc,
+          company_id: targetCompanyId
         };
 
         if (action === 'update') {
@@ -475,6 +482,13 @@ function VendorsContent() {
   // Filtered and sorted vendors
   const filteredVendors = vendors
     .filter(v => {
+      // Company-wise filter: if a company is selected (not 'ALL'), show vendors belonging to that company or global vendors
+      if (selectedCompanyId && selectedCompanyId !== 'ALL') {
+        if (v.company_id && v.company_id !== selectedCompanyId) {
+          return false;
+        }
+      }
+
       if (balanceFilter === 'with_balance' && !(Number(v.outstanding_payable_amount) > 0)) {
         return false;
       }
@@ -506,6 +520,7 @@ function VendorsContent() {
     setFormError(null);
     if (vendor) {
       setEditingVendor(vendor);
+      setCompanyId(vendor.company_id || (selectedCompanyId !== 'ALL' ? selectedCompanyId : ''));
       setName(vendor.name);
       setContactPerson(vendor.contact_person || '');
       setEmail(vendor.email || '');
@@ -516,6 +531,7 @@ function VendorsContent() {
       setBankType(vendor.bank_type || 'BANK_MUSCAT');
     } else {
       setEditingVendor(null);
+      setCompanyId(selectedCompanyId !== 'ALL' ? selectedCompanyId : (companies[0]?.id || ''));
       setName('');
       setContactPerson('');
       setEmail('');
@@ -550,6 +566,7 @@ function VendorsContent() {
       }
 
       const vendorData = {
+        company_id: companyId ? companyId : null,
         name: name.trim(),
         contact_person: contactPerson.trim() || null,
         email: email.trim() || null,
@@ -808,6 +825,18 @@ function VendorsContent() {
                             <span className="truncate">{vendor.name}</span>
                             <FileText className="h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-500 shrink-0" />
                           </button>
+                          {(() => {
+                            const vendorCompany = vendor.company_id ? companies.find(c => c.id === vendor.company_id) : null;
+                            if (vendorCompany) {
+                              return (
+                                <span className="inline-flex items-center gap-1 mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/50">
+                                  <Building2 className="h-2.5 w-2.5" />
+                                  {vendorCompany.short_name || vendorCompany.name}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                           {vendor.zoho_contact_id && (
                             <span className="block text-[10px] text-blue-600 font-normal">
                               Zoho ID: {vendor.zoho_contact_id}
@@ -969,6 +998,29 @@ function VendorsContent() {
                     <p className="leading-relaxed">{formError}</p>
                   </div>
                 )}
+
+                {/* Company / Business Entity */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-indigo-600" />
+                    Company / Entity
+                  </label>
+                  <select
+                    value={companyId}
+                    onChange={(e) => setCompanyId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white py-2.5 px-3 text-sm font-medium text-slate-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">All Companies / Global (Shared)</option>
+                    {companies.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.short_name ? `(${c.short_name})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400">
+                    Assign this vendor to a specific corporate entity, or leave as shared across all entities.
+                  </p>
+                </div>
 
                 {/* Vendor Name & Bank Type */}
                 <div className="grid grid-cols-3 gap-4">
@@ -1192,6 +1244,29 @@ function VendorsContent() {
                 {/* Step 1: Upload and Template Info */}
                 {!importSummary && parsedRows.length === 0 && (
                   <div className="space-y-6">
+                    {/* Target Company Selection */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-2">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                        <Building2 className="h-4 w-4 text-indigo-600" />
+                        Target Company / Business Entity
+                      </label>
+                      <select
+                        value={importCompanyId || (selectedCompanyId !== 'ALL' ? selectedCompanyId : '')}
+                        onChange={(e) => setImportCompanyId(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white py-2.5 px-3 text-sm font-medium text-slate-800 outline-none focus:border-indigo-500"
+                      >
+                        <option value="">All Companies / Global (Shared)</option>
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} {c.short_name ? `(${c.short_name})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-slate-500">
+                        Imported vendors will be associated with this entity.
+                      </p>
+                    </div>
+
                     {/* Template Card */}
                     <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                       <div className="space-y-1">
